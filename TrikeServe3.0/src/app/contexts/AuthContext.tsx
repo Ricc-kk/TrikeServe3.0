@@ -775,6 +775,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
     const startupGeneration = authTransitionGenerationRef.current;
+    let initialProfileRestore: { userId: string; promise: Promise<void> } | null = null;
+    let startupSessionRestoreFinished = false;
+
+    const finishInitialRestore = () => {
+      startupSessionRestoreFinished = true;
+      clearTimeout(safetyTimeout);
+      if (mounted) setIsLoading(false);
+    };
+
+    // getSession() and INITIAL_SESSION both report the same persisted session
+    // during startup. Share one profile request so one path cannot invalidate
+    // the other's request and end the loading screen before the user is set.
+    const restoreInitialProfile = (userId: string) => {
+      if (initialProfileRestore?.userId === userId) return initialProfileRestore.promise;
+
+      const promise = loadUserProfile(userId, false, startupGeneration).finally(finishInitialRestore);
+      initialProfileRestore = { userId, promise };
+      return promise;
+    };
 
     /**
      * Last resort on a reload: the cached user.
@@ -814,7 +833,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Show the cached user rather than resolving to null, so a slow profile
         // query cannot bounce a signed-in person to the login screen.
         restoreFromStorage('safety timeout', startupGeneration);
-        setIsLoading(false);
+        finishInitialRestore();
       }
     }, 3000);
 
@@ -822,33 +841,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!mounted) return;
       if (startupGeneration !== authTransitionGenerationRef.current) {
-        clearTimeout(safetyTimeout);
-        setIsLoading(false);
+        finishInitialRestore();
         return;
       }
       if (session?.user) {
-        loadUserProfile(session.user.id, false, startupGeneration).finally(() => {
-          clearTimeout(safetyTimeout);
-          if (mounted) setIsLoading(false);
-        });
+        void restoreInitialProfile(session.user.id);
       } else {
         // No Supabase session — fall back to stored user in localStorage.
         // This keeps the user logged in on Capacitor after app restart, and on
         // the web for accounts (admins) that never had an Auth session.
         restoreFromStorage('no session');
-        clearTimeout(safetyTimeout);
-        setIsLoading(false);
+        finishInitialRestore();
       }
     }).catch(() => {
       if (startupGeneration !== authTransitionGenerationRef.current) {
-        clearTimeout(safetyTimeout);
-        if (mounted) setIsLoading(false);
+        finishInitialRestore();
         return;
       }
       // On error, try to restore from localStorage as fallback
       restoreFromStorage('session error', startupGeneration);
-      clearTimeout(safetyTimeout);
-      if (mounted) setIsLoading(false);
+      finishInitialRestore();
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -885,6 +897,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             pendingLogin?.generation === authTransitionGenerationRef.current &&
             pendingLogin.email === (session.user.email || '').toLowerCase()
           );
+          // Supabase can emit SIGNED_IN while the saved session is being
+          // initialized in a freshly loaded page. The initial restore below
+          // owns that session; treating it as a tab switch here invalidates
+          // the startup generation and can expose the signed-out route first.
+          if (session?.user && !currentId && !startupSessionRestoreFinished) {
+            console.log('[AuthContext] Deferring SIGNED_IN until the initial session restore finishes');
+            return;
+          }
           if (session?.user && session.user.id !== currentId && !belongsToPendingLogin) {
             console.warn('[AuthContext] Another tab signed in as a different account — following it');
             const transitionGeneration = beginAuthTransition();
@@ -913,19 +933,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
            * harmless: both resolve to the same user.
            */
           if (startupGeneration !== authTransitionGenerationRef.current) {
-            clearTimeout(safetyTimeout);
-            setIsLoading(false);
+            finishInitialRestore();
             return;
           }
           if (session?.user) {
-            loadUserProfile(session.user.id, false, startupGeneration).finally(() => {
-              clearTimeout(safetyTimeout);
-              if (mounted) setIsLoading(false);
-            });
+            void restoreInitialProfile(session.user.id);
           } else {
             restoreFromStorage('initial session');
-            clearTimeout(safetyTimeout);
-            setIsLoading(false);
+            finishInitialRestore();
           }
           return;
         }
