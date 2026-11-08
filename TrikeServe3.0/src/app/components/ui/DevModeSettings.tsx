@@ -96,6 +96,7 @@ export default function DevModeSettings() {
   const [customerRideBookingEnabled, setCustomerRideBookingEnabled] = useDevModeFeature("customerRideBooking");
   const [driverQueueJoiningEnabled, setDriverQueueJoiningEnabled] = useDevModeFeature("driverQueueJoining");
   const [driverFoodDeliveryEnabled, setDriverFoodDeliveryEnabled] = useDevModeFeature("driverFoodDelivery");
+  const [customerDeliveryAnywhereEnabled, setCustomerDeliveryAnywhereEnabled] = useDevModeFeature("customerDeliveryAnywhere");
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<FloatingPosition>(getInitialFloatingPosition);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -306,6 +307,15 @@ export default function DevModeSettings() {
               onCheckedChange={setDriverFoodDeliveryEnabled}
               disabled={!isEnabled}
               icon={Package}
+            />
+            <SettingRow
+              id="dev-mode-customer-delivery-anywhere"
+              title="Customer delivery anywhere"
+              description="Allow customers to place food delivery orders to any selected address while Dev Mode is on."
+              checked={customerDeliveryAnywhereEnabled}
+              onCheckedChange={setCustomerDeliveryAnywhereEnabled}
+              disabled={!isEnabled}
+              icon={MapPin}
             />
             <SettingRow
               id="dev-mode-enforce-boundary"

@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { MarkerF } from "@react-google-maps/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MarkerF, PolylineF } from "@react-google-maps/api";
 import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
 import { ChevronLeft, Loader2, MapPin, Search } from "lucide-react";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import { useLocation, useNavigate } from "react-router";
 
 import useMapLoader from "@/lib/mapLoader";
+import { normalizeTerminalRoutes, legacyRouteFromBoundary } from "@/lib/terminalRoutes";
+import { normalizeRouteColor, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
+import { supabase } from "../../../utils/supabase";
 import {
   createPlacesSessionToken,
   fetchPlaceDetailsNew,
@@ -24,6 +27,19 @@ import {
   writeAddressDraft,
   type AddressDraft,
 } from "./addressFlowState";
+
+type DeliveryMapTerminal = {
+  id: string;
+  name: string;
+  center_lat: number | string | null;
+  center_lng: number | string | null;
+  routes?: unknown;
+  boundary_polygon?: unknown;
+  road_width_m?: number | string | null;
+  route_color?: string | null;
+  marker_color?: string | null;
+  is_active?: boolean | null;
+};
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
@@ -90,6 +106,7 @@ export default function PinOnMapPage() {
   const [searching, setSearching] = useState(false);
   /** True while the pin is the one we dropped from their device position. */
   const [pinnedToCurrentLocation, setPinnedToCurrentLocation] = useState(false);
+  const [terminals, setTerminals] = useState<DeliveryMapTerminal[]>([]);
 
   /** Sheet height in pixels; the drag itself lives in a ref, not state. */
   const [sheetHeight, setSheetHeight] = useState(MIN_PX);
@@ -97,6 +114,45 @@ export default function PinOnMapPage() {
 
   const { isLoaded: isMapsLoaded, loadError, blocked, apiKeyPresent } = useMapLoader();
   const mapUnavailable = !apiKeyPresent || Boolean(loadError) || Boolean(blocked);
+
+  // Keep the same active terminal network customers see when choosing rides:
+  // every enabled plotted route plus the terminal marker, with legacy roads
+  // reconstructed for rows that have not been migrated to `routes` yet.
+  const terminalMapItems = useMemo(() => terminals.map((terminal) => {
+    const storedRoutes = normalizeTerminalRoutes(terminal.routes);
+    const routes = storedRoutes.length > 0
+      ? storedRoutes
+      : legacyRouteFromBoundary(terminal.boundary_polygon, terminal.road_width_m);
+    const lat = Number(terminal.center_lat);
+    const lng = Number(terminal.center_lng);
+
+    return {
+      id: terminal.id,
+      name: terminal.name || "Terminal",
+      position: Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null,
+      markerColor: normalizeTerminalColor(terminal.marker_color),
+      routeColor: normalizeRouteColor(terminal.route_color),
+      routes: routes.filter((route) => route.enabled && route.points.length >= 2),
+    };
+  }), [terminals]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void supabase.from("terminals").select("*").then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        console.warn("[PinOnMap] Could not load terminal routes:", error);
+        return;
+      }
+      setTerminals((data ?? []).filter((terminal: DeliveryMapTerminal) => terminal.is_active !== false));
+    }).catch((error) => {
+      if (!cancelled) console.warn("[PinOnMap] Could not load terminal routes:", error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const pin = hasPin(draft);
   const resolved = draft.address.trim();
@@ -368,6 +424,27 @@ export default function PinOnMapPage() {
             options={{ disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy' }}
           >
             <MapTypeToggle />
+            {terminalMapItems.flatMap((terminal) => terminal.routes.map((route) => (
+              <PolylineF
+                key={`delivery-route-${terminal.id}-${route.id}`}
+                path={route.points}
+                options={{
+                  strokeColor: terminal.routeColor,
+                  strokeOpacity: 0.82,
+                  strokeWeight: 5,
+                  clickable: false,
+                  geodesic: true,
+                }}
+              />
+            )))}
+            {terminalMapItems.filter((terminal) => terminal.position).map((terminal) => (
+              <MarkerF
+                key={`delivery-terminal-${terminal.id}`}
+                position={terminal.position!}
+                title={terminal.name}
+                icon={terminalMarkerIcon(terminal.markerColor)}
+              />
+            ))}
             {pin && <MarkerF position={{ lat: draft.latitude!, lng: draft.longitude! }} />}
           </GoogleMap>
         ) : (

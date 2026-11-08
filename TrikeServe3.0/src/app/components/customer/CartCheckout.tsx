@@ -24,7 +24,7 @@ import { computeDistanceFare, deliveryRates, straightLineKm } from "@/lib/pricin
 import ProofCapture from "../ui/ProofCapture";
 import { getDefaultAddress, setDefaultAddress } from "@/lib/defaultAddress";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
-import { useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { useDevModeFeature, useDevModeOverride, useDevModeStatus } from "../../hooks/useDevModeSettings";
 
 /**
  * Checkout for one restaurant.
@@ -45,8 +45,11 @@ export default function CartCheckout() {
     useCart();
   const { addOrder } = useOrders();
   const { user } = useAuth();
+  const [devModeEnabled] = useDevModeStatus();
+  const [customerDeliveryAnywhereEnabled] = useDevModeFeature("customerDeliveryAnywhere");
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const [imageProofRequired] = useDevModeOverride("imageProofRequired");
+  const allowAnyDeliveryAddress = devModeEnabled && customerDeliveryAnywhereEnabled;
 
   // Back to the cart list this was opened from.
   const goBack = usePreviousPage("/customer/cart");
@@ -175,8 +178,8 @@ export default function CartCheckout() {
   }, [imageProofRequired]);
 
   useEffect(() => {
-    if (!enforceBoundary) setDeliveryBoundaryError(null);
-  }, [enforceBoundary]);
+    if (!enforceBoundary || allowAnyDeliveryAddress) setDeliveryBoundaryError(null);
+  }, [enforceBoundary, allowAnyDeliveryAddress]);
 
   // Load the platform delivery base fee. A terminal can override this base and
   // add a per-kilometre charge after its configured included distance.
@@ -453,7 +456,7 @@ export default function CartCheckout() {
     // Food delivery addresses are customer drop-offs too. Verify them against
     // every enabled terminal route immediately before creating the order; the
     // quote is for pricing and may be stale by the time the customer submits.
-    if (enforceBoundary) {
+    if (enforceBoundary && !allowAnyDeliveryAddress) {
       try {
         let deliveryPoint = Number.isFinite(selectedAddress.lat) && Number.isFinite(selectedAddress.lng) &&
           (selectedAddress.lat !== 0 || selectedAddress.lng !== 0)
