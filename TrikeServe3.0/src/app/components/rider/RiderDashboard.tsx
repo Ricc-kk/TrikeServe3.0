@@ -87,6 +87,7 @@ export default function RiderDashboard() {
     ? (['delivery'] as const)
     : (['shared', 'private'] as const).filter((serviceType) => configuredServiceTypes.includes(serviceType));
   const [totalPendingRequests, setTotalPendingRequests] = useState(0);
+  const [totalPendingDeliveries, setTotalPendingDeliveries] = useState(0);
   const [hasActiveRide, setHasActiveRide] = useState(false);
   const [activeRideData, setActiveRideData] = useState<any>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
@@ -279,7 +280,7 @@ export default function RiderDashboard() {
           // Save all pending ride requests for routing and prioritization.
           setPendingRequestsList((rideRequests || []).filter((request: any) => {
             const rideType = String(request.ride_type || '').toLowerCase();
-            const isDelivery = rideType === 'delivery' || String(request.pickup_location || '').startsWith('DELIVERY|');
+            const isDelivery = rideType === 'delivery' || Boolean(request.order_id) || String(request.pickup_location || '').startsWith('DELIVERY|');
             return !isDelivery || foodDeliveryEnabled;
           }));
 
@@ -296,7 +297,7 @@ export default function RiderDashboard() {
           };
           const deliveryRequests = (rideRequests || []).filter((request: any) => {
             const rideType = String(request.ride_type || '').toLowerCase();
-            return rideType === 'delivery' || String(request.pickup_location || '').startsWith('DELIVERY|');
+            return rideType === 'delivery' || Boolean(request.order_id) || String(request.pickup_location || '').startsWith('DELIVERY|');
           });
           const deliveryOrderIds = [...new Set(deliveryRequests.map(getDeliveryOrderId).filter(Boolean))] as string[];
           const deliveryBusinessByOrderId = new Map<string, string>();
@@ -343,7 +344,7 @@ export default function RiderDashboard() {
             const pickupLocation = String(request.pickup_location || '');
             const rideType = String(request.ride_type || '').toLowerCase();
             const taggedDelivery = pickupLocation.startsWith('DELIVERY|');
-            const type = rideType === 'delivery' || taggedDelivery
+            const type = rideType === 'delivery' || Boolean(request.order_id) || taggedDelivery
               ? 'delivery'
               : rideType === 'share' || rideType === 'shared'
                 ? 'shared'
@@ -379,13 +380,20 @@ export default function RiderDashboard() {
           // not whether the dashboard reflects incoming passenger demand.
           const seenOrderIds = new Set<string>();
           let availableRideRequestCount = 0;
+          let availableDeliveryRequestCount = 0;
           (rideRequests || []).forEach((request: any) => {
             if (supabaseHelpers.isDeclinedByDriver(request, user?.id)) return;
-            if (request.order_id) {
-              if (seenOrderIds.has(request.order_id)) return;
-              seenOrderIds.add(request.order_id);
+            const isDelivery = String(request.ride_type || '').toLowerCase() === 'delivery'
+              || Boolean(request.order_id)
+              || String(request.pickup_location || '').startsWith('DELIVERY|');
+            if (isDelivery) {
+              const orderId = getDeliveryOrderId(request) || String(request.id);
+              if (seenOrderIds.has(orderId)) return;
+              seenOrderIds.add(orderId);
             }
-            if (canAcceptRequest(request)) availableRideRequestCount += 1;
+            if (!canAcceptRequest(request)) return;
+            if (isDelivery) availableDeliveryRequestCount += 1;
+            else availableRideRequestCount += 1;
           });
 
           // Shared lobbies contribute their waiting passengers for the assigned
@@ -397,15 +405,17 @@ export default function RiderDashboard() {
             return total + passengers.length;
           }, 0);
 
-          const totalCount = availableRideRequestCount + availableLobbyPassengers;
+          const totalPassengerCount = availableRideRequestCount + availableLobbyPassengers;
 
-          setTotalPendingRequests(totalCount);
+          setTotalPendingRequests(totalPassengerCount);
+          setTotalPendingDeliveries(availableDeliveryRequestCount);
 
-          if (totalCount > 0) {
+          if (totalPassengerCount + availableDeliveryRequestCount > 0) {
             console.log('✅ Dashboard: Loaded passenger count:', {
               availableRideRequests: availableRideRequestCount,
               availableLobbyPassengers,
-              total: totalCount
+              availableDeliveryRequests: availableDeliveryRequestCount,
+              totalPassengers: totalPassengerCount,
             });
           } else {
             console.log('📭 Dashboard: No pending passengers or lobby requests');
@@ -413,6 +423,7 @@ export default function RiderDashboard() {
         } catch (error) {
           console.error('❌ Dashboard: Error loading requests:', error);
           setTotalPendingRequests(0);
+          setTotalPendingDeliveries(0);
         }
       };
 
@@ -1240,19 +1251,32 @@ export default function RiderDashboard() {
               <div className="border-t border-line px-4 py-4 sm:px-5">
                 <div className="flex flex-col items-center text-center">
                   {/* Header */}
-                  <h3 className="font-extrabold text-base text-[var(--ink)] mb-4">Passenger Requests</h3>
+                  <h3 className="font-extrabold text-base text-[var(--ink)] mb-4">
+                    {activeServiceCategory === 'delivery' ? 'Delivery Requests' : 'Passenger Requests'}
+                  </h3>
 
                   {/* Icon and Text Section */}
                   <div className={`flex items-center justify-center gap-3 mb-4 ${!isOnline ? 'opacity-50' : ''}`}>
                     {/* Green Icon Circle */}
                     <div className="w-12 h-12 rounded-2xl bg-[var(--success-ink)] flex items-center justify-center flex-shrink-0">
-                      <Users className="w-8 h-8 text-white" />
+                      {activeServiceCategory === 'delivery'
+                        ? <Package className="w-8 h-8 text-white" />
+                        : <Users className="w-8 h-8 text-white" />}
                     </div>
 
                     {/* Text Content */}
                     <div className="text-left">
-                      <p className="text-sm font-semibold text-[var(--ink)] mb-1">{totalPendingRequests} passengers waiting</p>
-                      <p className="text-xs text-[var(--muted-foreground)]">Looking for tricycle<br/>service nearby</p>
+                      {activeServiceCategory === 'delivery' ? (
+                        <>
+                          <p className="text-sm font-semibold text-[var(--ink)] mb-1">{totalPendingDeliveries} delivery requests available</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">Food orders waiting for<br/>a driver nearby</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-semibold text-[var(--ink)] mb-1">{totalPendingRequests} passengers waiting</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">Looking for tricycle<br/>service nearby</p>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -1260,7 +1284,7 @@ export default function RiderDashboard() {
                   {isOnline ? (
                     <Link to="/rider/passenger-requests" className="w-full">
                       <Button className="min-h-12 w-full rounded-xl bg-[var(--primary)] hover:bg-[var(--primary)] text-[var(--primary-foreground)] font-bold">
-                        View All Passenger Requests
+                        View Requests
                       </Button>
                     </Link>
                   ) : (
@@ -1269,7 +1293,7 @@ export default function RiderDashboard() {
                       aria-haspopup="dialog"
                       className="w-full bg-[var(--border)] text-[var(--muted-foreground)] font-bold"
                     >
-                      View All Passenger Requests
+                      View Requests
                     </Button>
                   )}
                 </div>

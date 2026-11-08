@@ -1,10 +1,10 @@
-import { AlertCircle, BadgeCheck, CookingPot, Navigation, Package, PackageCheck, Store, Truck } from "lucide-react";
+import { AlertCircle, BadgeCheck, CookingPot, MapPin, Package, PackageCheck, Store, Truck } from "lucide-react";
 
 type OrderStatusUpdatesProps = {
   status?: string | null;
   driverStatus?: string | null;
   deliveryMode?: string | null;
-  /** Show the driver's assignment and restaurant arrival in the business view. */
+  /** Show shared restaurant arrival and customer drop-off milestones for delivery. */
   showRestaurantArrival?: boolean;
   className?: string;
 };
@@ -39,9 +39,10 @@ export function OrderStatusUpdates({
     ? [
         { label: "Accepted", Icon: BadgeCheck },
         { label: "Preparing", Icon: CookingPot },
-        { label: "To restaurant", Icon: Navigation },
+        { label: "Ready", Icon: Package },
         { label: "At restaurant", Icon: Store },
         { label: "Out for delivery", Icon: Truck },
+        { label: "At drop-off", Icon: MapPin },
         { label: "Delivered", Icon: PackageCheck },
       ]
     : [
@@ -55,20 +56,35 @@ export function OrderStatusUpdates({
   // milestone becomes active when the business confirms payment/accepts it.
   let current = status && status !== "pending" ? 0 : -1;
   if (hasRestaurantArrivalSteps) {
-    const pickedUpStatuses = ["picked-up", "in-progress"];
-    const deliveredStatuses = ["delivered", "collected", "completed"];
+    const orderStepByStatus: Record<string, number> = {
+      preparing: 1,
+      ready: 2,
+      confirmed: 2,
+      "payment-confirmed": 0,
+      "on-the-way": 2,
+      "picked-up": 4,
+      "in-progress": 4,
+      "dropped-off": 5,
+      "awaiting-payment": 5,
+      delivered: 6,
+      collected: 6,
+      completed: 6,
+    };
+    const driverStepByStatus: Record<string, number> = {
+      accepted: 2,
+      // There is no separate "to restaurant" milestone. The track stays Ready
+      // until the driver actually arrives at the restaurant.
+      "on-the-way": 2,
+      arrived: 3,
+      "at-restaurant": 3,
+      "picked-up": 4,
+      "in-progress": 4,
+      "dropped-off": 5,
+      "awaiting-payment": 5,
+      completed: 6,
+    };
 
-    if (deliveredStatuses.includes(status) || driverStatus === "completed") {
-      current = steps.length - 1;
-    } else if (pickedUpStatuses.includes(status) || pickedUpStatuses.includes(driverStatus)) {
-      current = 4;
-    } else if (["arrived", "at-restaurant"].includes(driverStatus)) {
-      current = 3;
-    } else if (["accepted", "on-the-way"].includes(driverStatus) || status === "on-the-way") {
-      current = 2;
-    } else if (["preparing", "ready"].includes(status)) {
-      current = 1;
-    }
+    current = Math.max(current, orderStepByStatus[status] ?? -1, driverStepByStatus[driverStatus] ?? -1);
   } else if (status !== "pending") {
     if (["delivered", "collected", "completed"].includes(status) || driverStatus === "completed") {
       current = 3;
@@ -90,7 +106,7 @@ export function OrderStatusUpdates({
   }
 
   return (
-    <div className={`relative grid w-full ${hasRestaurantArrivalSteps ? "grid-cols-6" : "grid-cols-4"} ${className ?? ""}`} role="list" aria-label="Order progress">
+    <div className={`relative grid w-full ${hasRestaurantArrivalSteps ? "grid-cols-7" : "grid-cols-4"} ${className ?? ""}`} role="list" aria-label="Order progress">
       {steps.slice(0, -1).map((_, index) => (
         <span
           key={`connector-${index}`}

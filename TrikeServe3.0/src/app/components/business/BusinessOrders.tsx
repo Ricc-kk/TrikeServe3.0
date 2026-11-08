@@ -1598,7 +1598,7 @@ export default function BusinessOrders() {
   const isFindingRider = (order: Order | null) =>
     !!order && order.deliveryMode === 'delivery' &&
     (Boolean(order.driverRequested) || order.status === 'confirmed') &&
-    !order.driverName;
+    !order.driverName && !order.driverId;
 
   const orderStatusLabel = (order: Order | null) => {
     if (!order) return '';
@@ -1642,6 +1642,7 @@ export default function BusinessOrders() {
         status: isFindingRider(selectedOrder) ? 'ready' : selectedOrder.status,
         driverStatus: driverStatus ?? selectedOrder.driverStatus,
         driverMessage: selectedOrder.driverMessage,
+        driverAssigned: Boolean(selectedOrder.driverId || selectedOrder.driverName),
         deliveryMode: selectedOrder.deliveryMode,
         driverLabel: 'Driver',
       })

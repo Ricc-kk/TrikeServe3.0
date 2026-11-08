@@ -29,6 +29,7 @@ export type OrderStepKey =
   | 'preparing'
   | 'ready'
   | 'rider-assigned'
+  | 'restaurant-arrived'
   | 'picked-up'
   | 'arrived'
   | 'delivered'
@@ -83,8 +84,9 @@ const DELIVERY_STEPS: OrderProgressStep[] = [
   { key: 'preparing', label: 'Preparing', title: 'Preparing your order', description: 'The kitchen is preparing your order.', isRiderStep: false },
   { key: 'ready', label: 'Ready', title: 'Ready for pickup', description: 'Your order is packed and waiting to be collected.', isRiderStep: false },
   { key: 'rider-assigned', label: 'Rider Assigned', title: 'Rider assigned to collect your order', description: 'A rider has been assigned to pick up your order from the restaurant.', isRiderStep: true },
+  { key: 'restaurant-arrived', label: 'At Restaurant', title: 'Driver arrived at restaurant', description: 'Your driver is at the restaurant and waiting to collect your order.', isRiderStep: true },
   { key: 'picked-up', label: 'Picked Up', title: 'Order picked up', description: 'Your rider has the order and is on the way to you.', isRiderStep: true },
-  { key: 'arrived', label: 'Rider Arrived', title: 'Rider Arrived', description: 'Your rider has arrived at your address and is waiting for payment.', isRiderStep: true },
+  { key: 'arrived', label: 'At Drop-off', title: 'Driver arrived at your address', description: 'Your driver has arrived at the drop-off and is completing the handover.', isRiderStep: true },
   { key: 'delivered', label: 'Delivered', title: 'Order delivered', description: 'The order was delivered. Thanks for ordering!', isRiderStep: true },
 ];
 
@@ -107,7 +109,11 @@ const CANCELLED_STEPS: OrderProgressStep[] = [
 ];
 
 const RIDER_ASSIGNED_INDEX = DELIVERY_STEPS.findIndex((s) => s.key === 'rider-assigned');
-const DELIVERED_INDEX = DELIVERY_STEPS.length - 1;
+const READY_INDEX = DELIVERY_STEPS.findIndex((s) => s.key === 'ready');
+const RESTAURANT_ARRIVED_INDEX = DELIVERY_STEPS.findIndex((s) => s.key === 'restaurant-arrived');
+const PICKED_UP_INDEX = DELIVERY_STEPS.findIndex((s) => s.key === 'picked-up');
+const ARRIVED_INDEX = DELIVERY_STEPS.findIndex((s) => s.key === 'arrived');
+const DELIVERED_INDEX = DELIVERY_STEPS.findIndex((s) => s.key === 'delivered');
 
 /**
  * How far the restaurant's own status gets the track, as a floor.
@@ -125,35 +131,37 @@ const ORDER_STATUS_STEP: Record<string, number> = {
   preparing: 1,
   ready: 2,
   // "Ready for delivery" - the shop published the order and a rider was requested.
-  confirmed: RIDER_ASSIGNED_INDEX,
+  confirmed: READY_INDEX,
   'on-the-way': RIDER_ASSIGNED_INDEX,
   // The order row records the restaurant handoff independently so the
   // customer timeline advances even if ride_requests is briefly stale.
-  'picked-up': RIDER_ASSIGNED_INDEX + 1,
+  'picked-up': PICKED_UP_INDEX,
+  'dropped-off': ARRIVED_INDEX,
+  'awaiting-payment': ARRIVED_INDEX,
   delivered: DELIVERED_INDEX,
+  completed: DELIVERED_INDEX,
+  collected: DELIVERED_INDEX,
 };
 
 /**
  * `ride_requests.driver_status` to a step.
  *
- * `dropped-off` is the rider app's name for arriving at the drop-off point, i.e.
- * the customer's address, and `awaiting-payment` is the same place a moment
- * later - both land on "Arrived".
+ * Restaurant arrival, pickup, and customer drop-off are separate milestones so
+ * all order views can show the phase the driver is acting on.
  */
 const RIDER_STATUS_STEP: Record<string, number> = {
-  // A ride request exists but nobody has taken it yet.
-  pending: RIDER_ASSIGNED_INDEX,
+  // A request exists, but nobody has accepted it yet.
+  pending: READY_INDEX,
   assigned: RIDER_ASSIGNED_INDEX,
   accepted: RIDER_ASSIGNED_INDEX,
   'on-the-way': RIDER_ASSIGNED_INDEX,
-  // Assignment, travel to the restaurant, and arrival there are one combined
-  // step. The driver route still uses the raw status to switch destinations.
-  arrived: RIDER_ASSIGNED_INDEX,
+  arrived: RESTAURANT_ARRIVED_INDEX,
+  'at-restaurant': RESTAURANT_ARRIVED_INDEX,
   // The rider app's `in-progress` predates the split into picked-up/dropped-off.
-  'in-progress': RIDER_ASSIGNED_INDEX + 1,
-  'picked-up': RIDER_ASSIGNED_INDEX + 1,
-  'dropped-off': RIDER_ASSIGNED_INDEX + 2,
-  'awaiting-payment': RIDER_ASSIGNED_INDEX + 2,
+  'in-progress': PICKED_UP_INDEX,
+  'picked-up': PICKED_UP_INDEX,
+  'dropped-off': ARRIVED_INDEX,
+  'awaiting-payment': ARRIVED_INDEX,
   completed: DELIVERED_INDEX,
 };
 
@@ -162,9 +170,8 @@ function normalize(value?: string | null): string {
 }
 
 /*
- * True while the rider is still travelling towards the restaurant, i.e. before the
- * order is in their hand. The delivery map tints its route line by this so "on
- * the way to the shop" and "carrying the food over" are told apart.
+ * True until the rider has picked up the food. The delivery map uses this to
+ * follow the restaurant leg, including the driver's arrival at the shop.
  *
  * Derived from the same rider-status table the track uses, rather than a second
  * hand-written list that would drift from it.
@@ -173,7 +180,7 @@ export function isRiderHeadingToRestaurant(riderStatus?: string | null): boolean
   const key = normalize(riderStatus);
   const index = RIDER_STATUS_STEP[key];
   if (index === undefined) return false;
-  return index < RIDER_STATUS_STEP['picked-up'];
+  return index < PICKED_UP_INDEX;
 }
 
 /**
@@ -186,6 +193,7 @@ export function getOrderProgress(input: {
   status?: string | null;
   driverStatus?: string | null;
   driverMessage?: string | null;
+  driverAssigned?: boolean;
   deliveryMode?: string | null;
   driverLabel?: 'Rider' | 'Driver';
 }): OrderProgress {
@@ -234,13 +242,19 @@ export function getOrderProgress(input: {
 
   // The order status is a floor; the rider's status can only push it forward.
   let current = ORDER_STATUS_STEP[status] ?? 0;
+  if (!isPickup && input.driverAssigned) {
+    current = Math.max(current, RIDER_ASSIGNED_INDEX);
+  }
   if (!isPickup && riderStatus && RIDER_STATUS_STEP[riderStatus] !== undefined) {
     current = Math.max(current, RIDER_STATUS_STEP[riderStatus]);
   }
-  if (status === 'delivered') current = lastIndex;
+  if (status === 'delivered' || status === 'completed' || status === 'collected') current = lastIndex;
   current = Math.min(Math.max(current, 0), lastIndex);
 
   const currentStep = steps[current];
+  const currentTitle = currentStep.key === 'rider-assigned' && riderStatus === 'on-the-way'
+    ? `${driverLabel} heading to the restaurant`
+    : currentStep.title;
   const hasRider = !isPickup;
 
   return {
@@ -248,7 +262,7 @@ export function getOrderProgress(input: {
     current,
     currentStep,
     currentLabel: currentStep.label,
-    currentTitle: currentStep.title,
+    currentTitle,
     currentStepIsRiderStep: currentStep.isRiderStep && hasRider,
     riderHasStarted: hasRider && (
       current > RIDER_ASSIGNED_INDEX ||

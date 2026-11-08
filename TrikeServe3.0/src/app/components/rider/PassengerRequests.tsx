@@ -224,10 +224,10 @@ export default function PassengerRequests() {
   // A driver with no terminal isn't part of any queue and cannot take rides yet.
   const isUnassigned = hasNoTerminal;
 
-  const mapRideType = (rideType: string, pickupLocation?: string): PassengerRequest['type'] => {
+  const mapRideType = (rideType: string, pickupLocation?: string, orderId?: string | null): PassengerRequest['type'] => {
     const normalized = (rideType || '').toLowerCase();
     const taggedDelivery = (pickupLocation || '').startsWith('DELIVERY|');
-    if (normalized === 'delivery' || taggedDelivery) return 'delivery';
+    if (normalized === 'delivery' || taggedDelivery || Boolean(orderId)) return 'delivery';
     if (normalized === 'share' || normalized === 'shared') return 'shared';
     return 'private';
   };
@@ -484,7 +484,7 @@ export default function PassengerRequests() {
         // Requests this rider already declined are hidden from them — they stay
         // available to every other rider, so the customer is unaffected.
         const visibleRideRequests = (rideRequests || []).filter((req: any) => {
-          const requestType = mapRideType(req.ride_type, req.pickup_location);
+          const requestType = mapRideType(req.ride_type, req.pickup_location, req.order_id);
           if (requestType === 'delivery') {
             const requestOrderId = req.order_id || parseDeliveryTag(req.pickup_location).orderId;
             const orderStatus = String(orderMap[requestOrderId]?.status || '').trim().toLowerCase().replace(/_/g, '-');
@@ -510,7 +510,7 @@ export default function PassengerRequests() {
           const requestOrderId = req.order_id || parseDeliveryTag(req.pickup_location).orderId;
           const order = orderMap[requestOrderId];
           const restaurant = restaurantMap[order?.business_id];
-          const requestType = mapRideType(req.ride_type, req.pickup_location);
+          const requestType = mapRideType(req.ride_type, req.pickup_location, req.order_id);
           const orderAddress = order?.address as string | undefined;
           const requestDropoffAddress = req.dropoff_address || req.dropoff_location;
           const requestDropoffCoords = readAddressCoordinates(requestDropoffAddress);
@@ -540,7 +540,9 @@ export default function PassengerRequests() {
           customerPhoto: '👤',
           distance: '2.5 km',
           estimatedTime: '7 mins',
-          passengers: req.passenger_count || 1,
+          // Delivery orders may store passenger_count=1 because the column is
+          // required, but a food delivery has no passengers to pick up.
+          passengers: requestType === 'delivery' ? 0 : req.passenger_count || 1,
           customerId: req.customer_id,
           terminalId: req.terminal_id ?? null,
           selectedRouteId: req.route_id || req.selected_route_id || null,
@@ -1061,7 +1063,8 @@ export default function PassengerRequests() {
       pickupLat: request.restaurantLat ?? request.pickupLat,
       pickupLng: request.restaurantLng ?? request.pickupLng,
       pickupAddress: request.restaurantAddress ?? request.pickupAddress,
-      passengerDetails,
+      passengers: request.type === 'delivery' ? 0 : request.passengers,
+      passengerDetails: request.type === 'delivery' ? [] : passengerDetails,
       driverId: user.id,
       driverName: user.name,
       driverPlate: user.todaPlate,
@@ -1070,6 +1073,24 @@ export default function PassengerRequests() {
       acceptedAt: new Date().toISOString(),
       eta: '5 mins',
     };
+
+    if (request.id && !request.id.startsWith('lobby_')) {
+      // Claim the request atomically before opening Active Ride. This prevents
+      // the driver's local progress from advancing if assignment was rejected.
+      const { data: claimedRequest, error: claimError } = await supabaseHelpers.claimRideRequest(
+        request.id,
+        user.id,
+        user.name || 'Driver',
+        user.avatarUrl || undefined,
+        user.todaPlate || 'N/A',
+        '4.8',
+      );
+      if (claimError || !claimedRequest || claimedRequest.accepted_driver_id !== user.id) {
+        console.error('[PassengerRequests] Could not claim ride request:', claimError);
+        alert('This request could not be assigned to you. Refresh the requests and try again.');
+        return;
+      }
+    }
 
     if (request.type === 'delivery' && (request.orderId || request.orderNumber)) {
       if (request.orderId) {
@@ -1102,22 +1123,6 @@ export default function PassengerRequests() {
        * delivery had not started. ActiveRide moves it when the rider confirms
        * pickup.
        */
-      if (request.id && !request.id.startsWith('lobby_')) {
-        // `accepted_driver_id` as well as `driver_id`. The customer's ride screen,
-        // the delivery screens and the driver's own active-ride lookup all read
-        // `accepted_driver_id`; the two other accept paths set both. Setting only
-        // `driver_id` here left the row looking accepted to the customer -- who was
-        // therefore locked out of booking -- while the driver, who looks rides up
-        // by `accepted_driver_id`, saw nothing at all.
-        await supabaseHelpers.updateRideRequest(request.id, {
-          status: 'accepted',
-          driver_id: user.id,
-          accepted_driver_id: user.id,
-          driver_name: user.name || 'Driver',
-          driver_photo: user.avatarUrl || null,
-          driver_plate: user.todaPlate || null,
-        });
-      }
     }
 
     setPreviewRequest(null);

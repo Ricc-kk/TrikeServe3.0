@@ -187,7 +187,11 @@ function mapLobbyToRiderRide(lobby: any) {
 
 function mapRideRequestToRiderRide(ride: any) {
   const rawType = String(ride.ride_type || ride.type || "").toLowerCase();
-  const type = rawType === "delivery" ? "delivery" : rawType === "shared" || rawType === "share" ? "shared" : "private";
+  const pickup = String(ride.pickup_location || ride.pickup || "");
+  const taggedOrderId = pickup.match(/(?:^|\|)ORDER_ID:([0-9a-fA-F-]+)/i)?.[1];
+  const taggedOrderNumber = pickup.match(/(?:^|\|)ORDER_NO:([^|]+)/i)?.[1]?.trim();
+  const isDelivery = rawType === "delivery" || Boolean(ride.order_id) || pickup.startsWith("DELIVERY|");
+  const type = isDelivery ? "delivery" : rawType === "shared" || rawType === "share" ? "shared" : "private";
   return {
     id: ride.id,
     type: type as "delivery" | "shared" | "private",
@@ -195,7 +199,7 @@ function mapRideRequestToRiderRide(ride: any) {
     // table when it is missing, exactly as it does for a freshly accepted ride.
     customerName: "Customer",
     customerPhoto: "",
-    pickup: ride.pickup_location,
+    pickup,
     dropoff: ride.dropoff_location,
     pickupAddress: ride.pickup_address,
     dropoffAddress: ride.dropoff_address,
@@ -206,11 +210,12 @@ function mapRideRequestToRiderRide(ride: any) {
     payment: ride.payment_method === "COD" ? "COD" : "PREPAID",
     amount: Number(ride.amount || 0),
     customerId: ride.customer_id,
+    passengers: isDelivery ? 0 : Number(ride.passenger_count || 1),
     terminalId: ride.terminal_id ?? null,
     selectedRouteId: ride.route_id || ride.selected_route_id || null,
     passengerDetails: [],
-    orderId: ride.order_id || undefined,
-    orderNumber: ride.order_number || undefined,
+    orderId: ride.order_id || taggedOrderId || undefined,
+    orderNumber: ride.order_number || taggedOrderNumber || undefined,
     status: mapDriverStatusToRideStatus(ride.driver_status),
     driverId: ride.accepted_driver_id,
     driverName: ride.driver_name,

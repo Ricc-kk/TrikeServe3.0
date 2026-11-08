@@ -13,8 +13,8 @@ import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
 import { supabase } from "../../../lib/supabase";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
-import { supabaseHelpers } from "@/lib/supabase";
-import { getOrderProgress } from "@/lib/orderProgress";
+import { geocodeAddress, supabaseHelpers } from "@/lib/supabase";
+import { getOrderProgress, isRiderHeadingToRestaurant } from "@/lib/orderProgress";
 import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { MarkerF, Polyline } from "@react-google-maps/api";
@@ -22,7 +22,7 @@ import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { createDropoffMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
-import { RIDE_MAP_DROPOFF_COLOR } from "@/lib/rideMapColors";
+import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 
 interface OrderData {
   id: string;
@@ -108,6 +108,16 @@ function buildOrderData(dbOrder: any): OrderData {
     cancelReason: dbOrder.cancel_reason || null,
     cancelledBy: dbOrder.cancelled_by || null,
   };
+}
+
+function parseAddressCoordinates(address?: string | null): { lat: number; lng: number } | null {
+  if (!address) return null;
+  const coordinatePart = address.includes('|') ? address.split('|').slice(1).join('|') : address;
+  const match = coordinatePart.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const lat = Number(match[1]);
+  const lng = Number(match[2]);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 }
 
 /*
@@ -209,7 +219,21 @@ export default function OrderDetail() {
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [restaurantLocation, setRestaurantLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
-  const [etaToCustomer, setEtaToCustomer] = useState<string | null>(null);
+  const [etaToActiveStop, setEtaToActiveStop] = useState<string | null>(null);
+  const trackingMapRef = useRef<any>(null);
+  const attemptedRestaurantGeocodeRef = useRef<string | null>(null);
+  const customerLocation = useMemo(() => parseAddressCoordinates(order?.address), [order?.address]);
+  const liveDriverStatus = order?.driverStatus ?? null;
+  const normalizedDriverStatus = liveDriverStatus?.trim().toLowerCase().replace(/_/g, '-') ?? '';
+  const normalizedOrderStatus = order?.status.trim().toLowerCase().replace(/_/g, '-') ?? '';
+  const orderPickupHasStarted = ['picked-up', 'in-progress', 'dropped-off', 'awaiting-payment', 'delivered', 'completed'].includes(normalizedOrderStatus);
+  const isRiderEnRouteToRestaurant = orderPickupHasStarted
+    ? false
+    : liveDriverStatus
+      ? isRiderHeadingToRestaurant(liveDriverStatus)
+      : Boolean(order?.driverId || order?.driverName || normalizedOrderStatus === 'on-the-way');
+  const isDriverAtRestaurant = !orderPickupHasStarted && ['arrived', 'at-restaurant'].includes(normalizedDriverStatus);
+  const activeTrackingDestination = isRiderEnRouteToRestaurant ? restaurantLocation : customerLocation;
   // ─── Load order once ───────────────────────────────────────────────
   useEffect(() => {
     if (!orderId) { setIsLoading(false); return; }
@@ -218,6 +242,9 @@ export default function OrderDetail() {
       try {
         setRestaurantLocation(null);
         setRestaurantProfile(null);
+        attemptedRestaurantGeocodeRef.current = null;
+        setRoutePath([]);
+        setEtaToActiveStop(null);
         const { data: dbOrder, error: dbError } = await supabase
           .from('orders').select('*').eq('id', orderId).single();
 
@@ -409,11 +436,9 @@ export default function OrderDetail() {
         }
         const pickupLat = Number(rideReq?.pickup_lat);
         const pickupLng = Number(rideReq?.pickup_lng);
-        setRestaurantLocation(
-          rideReq?.pickup_lat != null && rideReq?.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
-            ? { lat: pickupLat, lng: pickupLng }
-            : null,
-        );
+        if (rideReq?.pickup_lat != null && rideReq?.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
+          setRestaurantLocation({ lat: pickupLat, lng: pickupLng });
+        }
 
         // Build new order data and always set it
         const newData = buildOrderData(data);
@@ -463,11 +488,9 @@ export default function OrderDetail() {
       }
       const pickupLat = Number(ride.pickup_lat);
       const pickupLng = Number(ride.pickup_lng);
-      setRestaurantLocation(
-        ride.pickup_lat != null && ride.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
-          ? { lat: pickupLat, lng: pickupLng }
-          : null,
-      );
+      if (ride.pickup_lat != null && ride.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
+        setRestaurantLocation({ lat: pickupLat, lng: pickupLng });
+      }
       // The rider's status arrives here first, so the track advances on the
       // moment they tap a button rather than on the next 3s poll.
       if (ride.driver_status) {
@@ -586,37 +609,70 @@ export default function OrderDetail() {
     };
   }, [user?.id, order?.businessId, order?.driverId]);
 
+  // Some older restaurant profiles have an address but no saved map pin, and
+  // their ride request may also be missing pickup coordinates. Resolve that
+  // address once so the pickup leg can still be tracked on the customer screen.
   useEffect(() => {
-    if (!driverLocation || !isMapsLoaded || !(window as any).google || !order?.address) {
-      setRoutePath([]);
-      return;
+    const address = restaurantProfile?.address?.trim();
+    if (!isRiderEnRouteToRestaurant || restaurantLocation || !address || !isMapsLoaded) return;
+    if (attemptedRestaurantGeocodeRef.current === address) return;
+
+    attemptedRestaurantGeocodeRef.current = address;
+    let active = true;
+    void geocodeAddress(address).then((location) => {
+      if (active && location) setRestaurantLocation(location);
+    });
+    return () => { active = false; };
+  }, [isRiderEnRouteToRestaurant, restaurantLocation, restaurantProfile?.address, isMapsLoaded]);
+
+  // Follow the driver's active leg: restaurant before pickup, customer after.
+  useEffect(() => {
+    let active = true;
+    setRoutePath([]);
+    setEtaToActiveStop(null);
+    if (isDriverAtRestaurant && isRiderEnRouteToRestaurant) return () => { active = false; };
+    if (!driverLocation || !activeTrackingDestination || !isMapsLoaded || !(window as any).google) {
+      return () => { active = false; };
     }
-    const parseCoords = (addr: string): { lat: number; lng: number } | null => {
-      const coordPart = addr.includes('|') ? addr.split('|')[1] : addr;
-      const m = coordPart.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
-      return m ? { lat: parseFloat(m[1]), lng: parseFloat(m[2]) } : null;
-    };
-    const dest = parseCoords(order.address);
-    if (!dest) { setRoutePath([]); return; }
 
     const DirectionsService = new (window as any).google.maps.DirectionsService();
     DirectionsService.route({
       origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
-      destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
+      destination: new (window as any).google.maps.LatLng(activeTrackingDestination.lat, activeTrackingDestination.lng),
       travelMode: (window as any).google.maps.TravelMode.DRIVING,
     }, (result: any, status: string) => {
-      if (status === 'OK' && result?.routes?.[0]) {
-        const route = result.routes[0];
-        if (route.overview_polyline?.points) {
-          setRoutePath(decodePolyline(route.overview_polyline.points));
-        }
-        const leg = route.legs?.[0];
-        if (leg?.duration?.text) {
-          setEtaToCustomer(leg.duration.text);
-        }
-      }
+      if (!active) return;
+      const route = status === 'OK' ? result?.routes?.[0] : null;
+      if (!route) return;
+
+      const overviewPoints = route.overview_polyline?.points;
+      const stepPath = (route.legs || []).flatMap((leg: any) =>
+        (leg.steps || []).flatMap((step: any) =>
+          step.polyline?.points ? decodePolyline(step.polyline.points) : [],
+        ),
+      );
+      setRoutePath(overviewPoints ? decodePolyline(overviewPoints) : stepPath);
+      setEtaToActiveStop(route.legs?.[0]?.duration?.text || null);
     });
-  }, [driverLocation, isMapsLoaded, order?.address]);
+    return () => { active = false; };
+  }, [driverLocation, activeTrackingDestination?.lat, activeTrackingDestination?.lng, isMapsLoaded, isDriverAtRestaurant, isRiderEnRouteToRestaurant]);
+
+  // Keep the driver and active destination in view as the route updates.
+  useEffect(() => {
+    const map = trackingMapRef.current;
+    const maps = (window as any).google?.maps;
+    if (!map || !driverLocation) return;
+    if (!activeTrackingDestination || !maps?.LatLngBounds) {
+      map.setCenter(driverLocation);
+      return;
+    }
+
+    const bounds = new maps.LatLngBounds();
+    bounds.extend(driverLocation);
+    bounds.extend(activeTrackingDestination);
+    routePath.forEach((point) => bounds.extend(point));
+    map.fitBounds(bounds, 28);
+  }, [driverLocation, activeTrackingDestination?.lat, activeTrackingDestination?.lng, routePath]);
 
   const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
     const points: Array<{ lat: number; lng: number }> = [];
@@ -717,6 +773,7 @@ export default function OrderDetail() {
     status: order.status,
     driverStatus: order.driverStatus,
     driverMessage: order.driverMessage,
+    driverAssigned: Boolean(order.driverId || order.driverName),
     deliveryMode: order.deliveryMode,
     driverLabel: 'Driver',
   });
@@ -776,7 +833,9 @@ export default function OrderDetail() {
         <Badge className={`${statusColors[order.status]} text-xs`}>
           {progress.currentStepIsRiderStep && progress.riderHasStarted
             ? progress.currentTitle
-            : statusLabels[order.status]}
+            : order.status === 'confirmed' && !order.driverId && !order.driverName
+              ? 'Finding a Driver'
+              : statusLabels[order.status]}
         </Badge>
         {progress.currentStepIsRiderStep && progress.riderHasStarted && (
           <div className="mt-3 rounded-xl border border-[var(--info)]/20 bg-[var(--info-soft)] px-3 py-2.5">
@@ -818,41 +877,57 @@ export default function OrderDetail() {
             </div>
             <GoogleMap
               mapContainerStyle={{ width: '100%', height: '220px' }}
-              center={driverLocation}
-              zoom={15}
+              defaultCenter={driverLocation}
+              defaultZoom={13}
               options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'none' }}
+              onLoad={(map) => {
+                trackingMapRef.current = map;
+                const maps = (window as any).google?.maps;
+                if (maps?.LatLngBounds && activeTrackingDestination) {
+                  const bounds = new maps.LatLngBounds();
+                  bounds.extend(driverLocation);
+                  bounds.extend(activeTrackingDestination);
+                  map.fitBounds(bounds, 28);
+                }
+              }}
+              onUnmount={() => { trackingMapRef.current = null; }}
             >
               <MapTypeToggle />
               {restaurantLocation && (
                 <MarkerF position={restaurantLocation} title={`${order.restaurantName} restaurant`} icon={createRestaurantMarkerIcon()} />
               )}
               <MarkerF position={driverLocation} title="Driver" icon={createTricycleMarkerIcon()} />
-              {(() => {
-                const coords = (order?.address || '').includes('|') ? order.address.split('|')[1] : (order?.address || '');
-                const m = coords.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
-                if (!m) return null;
-                return (
-                  <MarkerF
-                    position={{ lat: parseFloat(m[1]), lng: parseFloat(m[2]) }}
-                    title="Customer drop-off"
-                    icon={createDropoffMarkerIcon({ size: 32 })}
-                  />
-                );
-              })()}
+              {customerLocation && (
+                <MarkerF
+                  position={customerLocation}
+                  title="Customer drop-off"
+                  icon={createDropoffMarkerIcon({ size: 32 })}
+                />
+              )}
               {routePath.length > 0 && (
-                <Polyline path={routePath} options={{ strokeColor: RIDE_MAP_DROPOFF_COLOR, strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }} />
+                <Polyline
+                  path={routePath}
+                  options={{
+                    strokeColor: isRiderEnRouteToRestaurant ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
+                    strokeOpacity: 0.9,
+                    strokeWeight: 4,
+                    geodesic: true,
+                  }}
+                />
               )}
             </GoogleMap>
             <div className="px-4 py-2.5 bg-surface border-t border-[var(--border)] flex items-center justify-between">
               <p className="text-xs font-semibold text-[var(--ink)]">
                 {order.driverName && <span className="text-[var(--muted-foreground)]">Driver: {order.driverName} • </span>}
-                {/* The track already knows which leg of the trip the rider is on,
-                    so reuse it here rather than guessing from the order status. */}
-                {progress.currentTitle}
+                {!activeTrackingDestination
+                  ? (isRiderEnRouteToRestaurant ? 'Restaurant location unavailable' : 'Customer location unavailable')
+                  : isDriverAtRestaurant
+                    ? 'Driver arrived at restaurant'
+                    : isRiderEnRouteToRestaurant ? 'Heading to restaurant' : 'Delivering to customer'}
               </p>
               <div className="flex items-center gap-2">
-                {etaToCustomer && (
-                  <span className="text-[10px] font-bold text-[var(--info)] bg-[var(--info-soft)] px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
+                {etaToActiveStop && (
+                  <span className="text-[10px] font-bold text-[var(--info)] bg-[var(--info-soft)] px-2 py-0.5 rounded-full">ETA {etaToActiveStop}</span>
                 )}
                 <div className="text-[10px] text-[var(--muted-foreground)]">● Live</div>
               </div>
@@ -876,6 +951,7 @@ export default function OrderDetail() {
             status={order.status}
             driverStatus={order.driverStatus}
             deliveryMode={order.deliveryMode}
+            showRestaurantArrival
           />
         </Card>
 

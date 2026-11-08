@@ -2018,7 +2018,7 @@ export default function ActiveRide() {
     const messageMap: Record<RideStatus, string> = {
       'on-the-way': 'Driver is on the way!',
       'arrived': 'Driver has arrived!',
-      'pickup': 'Passengers picked up!',
+      'pickup': isDeliveryRide(rideData) ? 'Driver picked up the order!' : 'Passengers picked up!',
       'drop-off': 'Arrived at drop-off!',
       'payment': 'Please complete the payment.',
     };
@@ -2724,6 +2724,10 @@ export default function ActiveRide() {
   const activeAction = (() => {
     switch (rideData.status) {
       case 'on-the-way':
+        if (isDeliveryRide(rideData)) {
+          return { label: "I've arrived", onClick: () => updateStatus('arrived'), isComplete: false };
+        }
+        return { label: 'Confirm Pickup', onClick: () => updateStatus('pickup'), isComplete: false };
       case 'arrived':
         return { label: 'Confirm Pickup', onClick: () => updateStatus('pickup'), isComplete: false };
       case 'pickup':
@@ -3612,9 +3616,10 @@ export default function ActiveRide() {
                   </div>
                 )}
                 <OrderStatusUpdates
-                  status={['pickup', 'drop-off', 'payment'].includes(rideData.status) ? 'picked_up' : 'preparing'}
+                  status={showRideComplete ? 'delivered' : ['pickup', 'drop-off', 'payment'].includes(rideData.status) ? 'picked_up' : 'preparing'}
                   driverStatus={driverProgressStatus[rideData.status]}
                   deliveryMode="delivery"
+                  showRestaurantArrival
                 />
               </RideSurfaceCard>
             )}

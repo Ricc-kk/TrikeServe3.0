@@ -772,8 +772,14 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM public.ride_requests AS ride
-    WHERE ride.order_id = v_order_id
-      AND ride.accepted_driver_id = v_driver_id
+    WHERE (
+        ride.order_id = v_order_id
+        OR (
+          ride.order_id IS NULL
+          AND position(lower('ORDER_ID:' || v_order_id::text) in lower(coalesce(ride.pickup_location, ''))) > 0
+        )
+      )
+      AND (ride.accepted_driver_id = v_driver_id OR ride.driver_id = v_driver_id)
       AND lower(replace(coalesce(ride.status, ''), '_', '-')) NOT IN ('cancelled', 'completed')
   ) THEN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'This rider is not assigned to the delivery order';

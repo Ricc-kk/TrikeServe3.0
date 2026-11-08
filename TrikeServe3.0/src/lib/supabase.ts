@@ -18,6 +18,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
+const browserAuthStorage = typeof window !== 'undefined' ? window.localStorage : undefined;
 
 console.log('[Supabase Init] Checking environment variables...');
 console.log('[Supabase Init] VITE_SUPABASE_URL:', supabaseUrl ? '✅ Set' : '❌ Missing');
@@ -58,7 +59,19 @@ console.log('[Supabase Init] ✅ All credentials loaded successfully');
 
 export const supabase = createClient(
   supabaseUrl,
-  supabaseAnonKey
+  supabaseAnonKey,
+  {
+    auth: {
+      // Keep the authenticated session in Supabase's persistent browser
+      // storage so a page reload restores the same account. Leave storageKey
+      // at its Supabase default to preserve sessions already saved by older
+      // app versions.
+      storage: browserAuthStorage,
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  },
 );
 
 // Login-time tools such as Quick Access must not inherit a saved user's JWT.
