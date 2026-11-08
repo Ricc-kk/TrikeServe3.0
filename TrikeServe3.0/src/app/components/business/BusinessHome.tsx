@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Store, Package, BarChart3, User, Plus, X, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Loader2, Mail, Phone, Truck, UtensilsCrossed, Wallet } from "lucide-react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useBlocker, useNavigate, useSearchParams } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import ConfirmationModal from "../ui/confirmation-modal";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
 import BusinessSidebar from "./BusinessSidebar";
@@ -75,11 +76,6 @@ export default function BusinessHome() {
   const [showConfirmSaveInfo, setShowConfirmSaveInfo] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   const [saveInfoError, setSaveInfoError] = useState<string | null>(null);
-  // The GCash instructions save on their own, immediately, and so carry their
-  // own state rather than borrowing the store-information card's.
-  const [isSavingPaymentInstructions, setIsSavingPaymentInstructions] = useState(false);
-  const [savePaymentInstructionsError, setSavePaymentInstructionsError] = useState<string | null>(null);
-  const [paymentInstructionsSaved, setPaymentInstructionsSaved] = useState(false);
   // Address and pin move together, so the full-screen map picker is the only way
   // to edit them. Typing the address on its own produced a text address with no
   // coordinates behind it, which is exactly what "distance to you" needs.
@@ -116,15 +112,28 @@ export default function BusinessHome() {
     paymentInstructions: ""
   });
 
-  /*
-   * The shop details as they were before this editing session began.
-   *
-   * The store-information fields are edited in place, in the card that displays
-   * them, so Cancel has something to put back. Without this it would only close
-   * the fields and leave the card showing values nobody ever saved -- and the
-   * next Save would publish a change the owner had already backed out of.
-   */
+  /* Snapshot of the shop fields at the start of the current edit session. */
   const infoSnapshotRef = useRef<typeof restaurantData | null>(null);
+
+  const hasUnsavedInfoChanges = (() => {
+    const snapshot = infoSnapshotRef.current;
+    if (!showEditInfo || !snapshot) return false;
+
+    return restaurantData.name !== snapshot.name ||
+      restaurantData.subtitle !== snapshot.subtitle ||
+      restaurantData.address !== snapshot.address ||
+      restaurantData.deliveryTime !== snapshot.deliveryTime ||
+      JSON.stringify(restaurantData.cuisine) !== JSON.stringify(snapshot.cuisine) ||
+      restaurantData.latitude !== snapshot.latitude ||
+      restaurantData.longitude !== snapshot.longitude ||
+      restaurantData.paymentInstructions !== snapshot.paymentInstructions;
+  })();
+
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      hasUnsavedInfoChanges &&
+      (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
+  );
 
   /*
    * Trading hours.
@@ -817,69 +826,33 @@ export default function BusinessHome() {
     }
   };
 
-  /*
- * Save the GCash instructions on their own.
- *
- * Writes the row directly rather than going through `profile.save`, which stages
- * a change for Super Admin review. That queue exists for the fields that describe
- * the shop to the public -- its name, where it is, what it serves -- because a
- * wrong value there misleads customers about a business the platform vouches for.
- * A GCash number is none of those things: it is this shop's own account, it
- * affects nobody else's listing, and a customer who cannot read it at checkout
- * cannot pay, so every order stalls until an admin gets to it.
- */
-const savePaymentInstructions = async () => {
-  if (!user?.id) return;
-
-  setIsSavingPaymentInstructions(true);
-  setSavePaymentInstructionsError(null);
+/* Save the shop's GCash details alongside the other My Shop edits. */
+const persistPaymentInstructions = async (instructions: string): Promise<string | null> => {
+  if (!user?.id) return 'You must be signed in to save payment instructions.';
 
   try {
-    // Always looked up by owner rather than carried in state: the shop row is
-    // identified by `business_user_id`, and the other writers on this screen
-    // look it up the same way, so a cached id here would be a second source that
-    // can disagree after the shop row is recreated.
+    // Look up by owner instead of relying on an id cached elsewhere on the page.
     const { data: row, error: lookupError } = await supabase
       .from('restaurants')
       .select('id')
       .eq('business_user_id', user.id)
       .maybeSingle();
 
-    if (lookupError) {
-      setSavePaymentInstructionsError(lookupError.message);
-      return;
-    }
-
-    const restaurantId = row?.id;
-
-    if (!restaurantId) {
-      setSavePaymentInstructionsError('No shop is linked to this account yet.');
-      return;
-    }
+    if (lookupError) return lookupError.message;
+    if (!row?.id) return 'No shop is linked to this account yet.';
 
     const { error: updateError } = await supabase
       .from('restaurants')
       .update({
-        // Trimmed, but an emptied field is written as an empty string rather than
-        // null so clearing it actually clears it -- the next load reads this back
-        // with `??`, which would keep a null and put the old text on screen again.
-        payment_instructions: restaurantData.paymentInstructions.trim(),
+        payment_instructions: instructions.trim(),
         updated_at: new Date().toISOString(),
       })
-      .eq('id', restaurantId);
+      .eq('id', row.id);
 
-    if (updateError) {
-      setSavePaymentInstructionsError(updateError.message);
-      return;
-    }
-
-    setPaymentInstructionsSaved(true);
-    setTimeout(() => setPaymentInstructionsSaved(false), 2500);
+    return updateError?.message ?? null;
   } catch (error) {
     console.error('[BusinessHome] Failed to save payment instructions:', error);
-    setSavePaymentInstructionsError('Could not save your payment instructions.');
-  } finally {
-    setIsSavingPaymentInstructions(false);
+    return 'Could not save your payment instructions.';
   }
 };
 
@@ -1079,15 +1052,6 @@ const storeInfoSummary: Array<{
     note: hoursConfigured ? "Closes itself outside these hours" : undefined,
   },
   {
-    label: "Map pin",
-    Icon: MapPin,
-    value: restaurantData.latitude != null
-      ? `${restaurantData.latitude.toFixed(5)}, ${restaurantData.longitude?.toFixed(5)}`
-      : "Not pinned",
-    note: restaurantData.latitude != null ? undefined : 'Your shop sorts last in "near you" lists',
-    tone: restaurantData.latitude != null ? undefined : "text-[var(--error)]",
-  },
-  {
     label: "GCash",
     Icon: Wallet,
     value: restaurantData.paymentInstructions.trim() ? "Instructions set" : "Not set",
@@ -1126,6 +1090,13 @@ const clearHours = () => {
   // writers for one row, neither able to see the other's result. It now goes
   // through the shared hook, which keeps one writer for both screens.
   const saveStoreInformation = async () => {
+    setSaveInfoError(null);
+    const originalSnapshot = infoSnapshotRef.current;
+    const originalPaymentInstructions = originalSnapshot?.paymentInstructions ?? restaurantData.paymentInstructions;
+    const paymentInstructionsChanged = Boolean(
+      originalSnapshot && restaurantData.paymentInstructions !== originalSnapshot.paymentInstructions,
+    );
+
     const result = await profile.save({
       name: restaurantData.name,
       subtitle: restaurantData.subtitle,
@@ -1140,6 +1111,22 @@ const clearHours = () => {
     if (!result.ok) {
       setSaveInfoError(result.error || 'Could not save your shop details.');
       return;
+    }
+
+    // The profile and payment instructions are stored through different existing
+    // paths. If the second write fails, treat the profile fields as saved and keep
+    // only the GCash edit dirty so retrying or cancelling stays accurate.
+    infoSnapshotRef.current = {
+      ...restaurantData,
+      paymentInstructions: originalPaymentInstructions,
+    };
+    if (paymentInstructionsChanged) {
+      const paymentError = await persistPaymentInstructions(restaurantData.paymentInstructions);
+      if (paymentError) {
+        setShowConfirmSaveInfo(false);
+        setSaveInfoError(`Shop details were saved, but GCash instructions could not be saved: ${paymentError}`);
+        return;
+      }
     }
 
     setSaveInfoError(null);
@@ -1925,40 +1912,9 @@ const clearHours = () => {
                             upload. Customers transfer the food amount by GCash and pay the
                             delivery fee in cash to the rider.
                           </p>
-
-                          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-                            <Button
-                              onClick={savePaymentInstructions}
-                              disabled={isSavingPaymentInstructions}
-                              className="text-sm disabled:opacity-60"
-                            >
-                              {isSavingPaymentInstructions ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                  Saving...
-                                </>
-                              ) : (
-                                <>
-                                  <Check className="w-4 h-4 mr-2" />
-                                  Save instructions
-                                </>
-                              )}
-                            </Button>
-                            {paymentInstructionsSaved && (
-                              <p className="text-xs font-semibold text-[var(--success-ink)]">
-                                Saved. Customers see this at checkout.
-                              </p>
-                            )}
-                          </div>
-
-                          {savePaymentInstructionsError && (
-                            <p
-                              role="alert"
-                              className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
-                            >
-                              {savePaymentInstructionsError}
-                            </p>
-                          )}
+                          <p className="mt-2 text-xs font-semibold text-[var(--muted-foreground)]">
+                            Included with Save changes below.
+                          </p>
                         </section>
                       </div>
                     </div>
@@ -2333,6 +2289,17 @@ const clearHours = () => {
             </div>
           </div>
         )}
+
+        <ConfirmationModal
+          isOpen={blocker.state === "blocked"}
+          onCancel={() => blocker.reset?.()}
+          onConfirm={() => blocker.proceed?.()}
+          title="Leave without saving?"
+          message="Your shop has unsaved changes, including any edited GCash instructions. Leaving now will discard them."
+          variant="warning"
+          confirmLabel="Discard changes"
+          zIndexClassName="z-[3100]"
+        />
       </div>
     </div>
   );
