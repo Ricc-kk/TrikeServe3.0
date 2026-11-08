@@ -10,6 +10,8 @@ export interface User {
   email: string;
   name: string;
   role: UserRole;
+  /** The account's signup role, preserved while `role` switches app modes. */
+  originalRole?: UserRole;
   phone: string;
   isVerified: boolean;
   createdAt: string;
@@ -112,6 +114,7 @@ function mapSupabaseUser(row: any): User {
     email: row.email,
     name: row.name || row.email?.split('@')[0] || 'User',
     role,
+    originalRole: row.original_role || role,
     phone: row.phone || '',
     isVerified: row.is_verified ?? defaultIsVerified(role),
     createdAt: row.created_at || new Date().toISOString(),
@@ -1145,6 +1148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: match.email,
         name: match.name || match.email.split('@')[0],
         role: legacyRole,
+        originalRole: match.originalRole || legacyRole,
         phone: match.phone || '',
         // Same rule as the database read: an absent flag means "not approved"
         // for business and rider, so a stale localStorage record can't stand in
@@ -1348,6 +1352,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name: authMeta.name || authMeta.full_name || email.split('@')[0],
             phone: authMeta.phone || '',
             role: metaRole,
+            original_role: metaRole,
             // Rebuilding a missing profile must not imply superadmin approval.
             // It used to hardcode is_verified: true, so deleting a pending
             // business's row and logging back in promoted it straight to full
@@ -1470,35 +1475,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user.role === role) return;
 
     const existingOriginal = localStorage.getItem('trikeserve_original_role');
+    const originalRole = (existingOriginal as User['role'] | null) || user.originalRole || user.role;
     if (!existingOriginal) {
-      localStorage.setItem('trikeserve_original_role', user.role);
+      localStorage.setItem('trikeserve_original_role', originalRole);
     }
 
     try {
-      await supabase.from('users').update({ role }).eq('id', user.id);
+      const { error } = await supabase
+        .from('users')
+        .update({ role, original_role: originalRole })
+        .eq('id', user.id);
+      if (error) throw error;
     } catch (error) {
       console.error('Error switching role:', error);
     }
 
-    const updatedUser = { ...user, role };
+    const updatedUser = { ...user, role, originalRole };
     setUser(updatedUser);
     localStorage.setItem('trikeserve_current_user', JSON.stringify(updatedUser));
   };
 
   const restoreOriginalRole = async () => {
     if (!user) return;
-    const original = localStorage.getItem('trikeserve_original_role');
+    const original = localStorage.getItem('trikeserve_original_role') || user.originalRole;
     if (!original) return;
 
     const originalRole = original as User['role'];
 
     try {
-      await supabase.from('users').update({ role: originalRole }).eq('id', user.id);
+      const { error } = await supabase
+        .from('users')
+        .update({ role: originalRole, original_role: originalRole })
+        .eq('id', user.id);
+      if (error) throw error;
     } catch (error) {
       console.error('Error restoring role:', error);
     }
 
-    const updatedUser = { ...user, role: originalRole };
+    const updatedUser = { ...user, role: originalRole, originalRole };
     setUser(updatedUser);
     localStorage.setItem('trikeserve_current_user', JSON.stringify(updatedUser));
     localStorage.removeItem('trikeserve_original_role');
@@ -1564,6 +1578,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name: data.name,
             phone: data.phone,
             role: data.role,
+            original_role: data.role,
             is_verified: isAutoVerified,
             email_verified: false,
             created_at: new Date().toISOString(),
@@ -1611,6 +1626,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           name: data.name,
           phone: data.phone,
           role: data.role,
+          originalRole: data.role,
           password: data.password,
           isVerified: isAutoVerified,
           createdAt: new Date().toISOString(),

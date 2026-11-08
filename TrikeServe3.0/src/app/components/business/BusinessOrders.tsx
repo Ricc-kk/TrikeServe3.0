@@ -2307,10 +2307,11 @@ export default function BusinessOrders() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="truncate font-bold text-[var(--ink)]">{selectedOrder.driverName}</p>
-                            <p className="mt-0.5 text-xs text-[var(--success-ink)]">Driver assigned to collect your order</p>
-                            {progress?.currentTitle && progress.currentStepIsRiderStep && (
-                              <p className="mt-1 text-xs font-medium text-[var(--success-ink)]">{progress.currentTitle}</p>
-                            )}
+                            <p className="mt-0.5 text-xs text-[var(--success-ink)]">
+                              {progress?.currentStepIsRiderStep && progress.currentTitle
+                                ? progress.currentTitle
+                                : 'Driver assigned to collect your order'}
+                            </p>
                             {progress?.riderMessage && (
                               <p className="mt-1 text-xs text-[var(--success-ink)]">&ldquo;{progress.riderMessage}&rdquo;</p>
                             )}

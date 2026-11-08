@@ -30,7 +30,6 @@ import {
   terminalMarkerIcon,
 } from "../ui/TerminalIcon";
 import ActiveRideButton from "./ActiveRideButton";
-import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes, type TerminalRoute } from "@/lib/terminalRoutes";
 import { getProfileInitials } from "@/lib/profileInitials";
@@ -204,9 +203,6 @@ export default function PassengerRequests() {
   const [showAccepted, setShowAccepted] = useState(false);
   const [showConfirmAccept, setShowConfirmAccept] = useState(false);
   const [confirmRequest, setConfirmRequest] = useState<PassengerRequest | null>(null);
-  // Declining asks for a reason first; the request is then hidden for this rider only.
-  const [showDeclinePrompt, setShowDeclinePrompt] = useState(false);
-  const [declineTarget, setDeclineTarget] = useState<PassengerRequest | null>(null);
 
   useEffect(() => {
     if (!foodDeliveryEnabled && selectedCategory === 'delivery') setSelectedCategory('all');
@@ -1015,32 +1011,6 @@ export default function PassengerRequests() {
     setResolvedDropoffCoords(null);
     setResolvedPassengerDropoffs([]);
     setPreviewRequest(request);
-  };
-
-  /**
-   * Decline a request, recording the rider's reason against them.
-   *
-   * The decline is per-rider: the request stays in every other rider's list and
-   * the customer sees no change.
-   */
-  const handleDeclineRequest = async (request: PassengerRequest, reason: string) => {
-    if (!user?.id) return;
-
-    const lobbyId = request.lobbyId;
-    const { error } = lobbyId
-      ? await supabaseHelpers.declineLobby(lobbyId, user.id, reason)
-      : await supabaseHelpers.declineRideRequest(request.id, user.id, reason);
-
-    if (error) {
-      console.error('❌ Failed to record decline:', error);
-      alert(`Failed to decline the request: ${(error as any)?.message || 'Please try again.'}`);
-      return;
-    }
-
-    // Drop it from this rider's list straight away.
-    setRequests(prev => prev.filter(r => r.id !== request.id));
-    setPreviewRequest(null);
-    console.log('🚫 Declined request with reason:', reason);
   };
 
   const handleAcceptRequest = async (request: PassengerRequest) => {
@@ -1934,45 +1904,13 @@ export default function PassengerRequests() {
               )}
             </div>
             <div className="shrink-0 border-t border-[var(--border)] bg-[var(--surface)] p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
-              <div className={`mx-auto grid w-full max-w-3xl gap-2 ${previewRequest.lobbyId || previewRequest.type === 'private' ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                {!previewRequest.lobbyId && previewRequest.type !== 'private' && (
-                  <Button
-                    onClick={() => { setDeclineTarget(previewRequest); setShowDeclinePrompt(true); }}
-                    variant="outline"
-                    className="min-h-12 w-full border-[var(--primary)] px-2 text-xs font-bold text-[var(--primary)] sm:text-sm"
-                  >
-                    Decline Request
-                  </Button>
-                )}
+              <div className="mx-auto grid w-full max-w-3xl grid-cols-1 gap-2">
                 <Button onClick={() => { setConfirmRequest(previewRequest); setShowConfirmAccept(true); }} className="min-h-12 w-full px-2 text-xs font-bold sm:text-sm">Accept & Navigate</Button>
               </div>
             </div>
           </div>
         </div>
       )}
-
-      {/* Decline Popup — collects a reason before hiding the request for this rider */}
-      <ReasonPromptModal
-        isOpen={showDeclinePrompt}
-        title="Decline this request?"
-        description={
-          declineTarget
-            ? `${declineTarget.type === 'delivery' ? 'Delivery' : declineTarget.type === 'shared' ? 'Shared ride' : 'Private ride'} · ${declineTarget.pickup} → ${declineTarget.dropoff}`
-            : undefined
-        }
-        confirmLabel="Decline Request"
-        placeholder="e.g. Too far, not my route, already on a trip…"
-        variant="warning"
-        zIndexClassName="z-[3500]"
-        onCancel={() => { setShowDeclinePrompt(false); setDeclineTarget(null); }}
-        onSubmit={async (reason) => {
-          const target = declineTarget;
-          setShowDeclinePrompt(false);
-          setDeclineTarget(null);
-          if (!target) return;
-          await handleDeclineRequest(target, reason);
-        }}
-      />
 
       {/* Active Ride Floating Button */}
       <ActiveRideButton />

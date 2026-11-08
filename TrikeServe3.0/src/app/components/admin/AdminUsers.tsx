@@ -27,6 +27,7 @@ interface StoredUser {
   email: string;
   phone: string;
   role: 'customer' | 'rider' | 'business' | 'admin';
+  originalRole?: 'customer' | 'rider' | 'business' | 'admin';
   isVerified: boolean;
   createdAt: string;
   password: string;
@@ -403,7 +404,21 @@ function labelOfOption(
  * loads cannot disagree about who is on which page.
  */
 function displayNameOf(u: StoredUser): string {
-  return u.role === 'business' ? (u.businessName || u.name) : u.name;
+  return originalRoleOf(u) === 'business' ? (u.businessName || u.name) : u.name;
+}
+
+/** The account identity, independent of the app role currently stored in `role`. */
+function originalRoleOf(u: Pick<StoredUser, 'role' | 'originalRole'>): StoredUser['role'] {
+  return u.originalRole || u.role;
+}
+
+function roleLabel(role: StoredUser['role']): string {
+  switch (role) {
+    case 'rider': return 'Driver';
+    case 'business': return 'Business';
+    case 'admin': return 'Admin';
+    default: return 'Customer';
+  }
 }
 
 /** Comparator for `Array.prototype.sort`, case- and accent-insensitive. */
@@ -539,6 +554,7 @@ function UserDetailModal({
   if (!user) return null;
 
   const displayName = displayNameOf(user);
+  const originalRole = originalRoleOf(user);
 
   return (
     <ModalShell
@@ -600,17 +616,18 @@ function UserDetailModal({
         <div className="flex items-center gap-3">
           <div
             className={`w-11 h-11 flex-shrink-0 rounded-xl flex items-center justify-center ${
-              user.role === 'customer'
+              originalRole === 'customer'
                 ? 'bg-[var(--success-soft)]'
-                : user.role === 'rider'
+                : originalRole === 'rider'
                   ? 'bg-[var(--info-soft)]'
                   : 'bg-[var(--violet-soft)]'
             }`}
           >
-            {getRoleIcon(user.role)}
+            {getRoleIcon(originalRole)}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {isSuperAdmin ? <button type="button" onClick={onChangeRole} aria-label={`Change role for ${displayName}`} aria-haspopup="dialog" className="inline-flex min-h-11 items-center gap-1 rounded-lg"><Badge className={getRoleBadgeColor(user.role)}>{user.role === 'rider' ? 'Driver' : user.role}</Badge><ChevronDown className="size-3 text-[var(--muted-foreground)]" aria-hidden="true" /></button> : <Badge className={getRoleBadgeColor(user.role)}>{user.role === 'rider' ? 'Driver' : user.role}</Badge>}
+            {isSuperAdmin ? <button type="button" onClick={onChangeRole} aria-label={`Change original role for ${displayName}`} aria-haspopup="dialog" className="inline-flex min-h-11 items-center gap-1 rounded-lg"><Badge className={getRoleBadgeColor(originalRole)}>{roleLabel(originalRole)}</Badge><ChevronDown className="size-3 text-[var(--muted-foreground)]" aria-hidden="true" /></button> : <Badge className={getRoleBadgeColor(originalRole)}>{roleLabel(originalRole)}</Badge>}
+            {user.role !== originalRole && <Badge className="bg-[var(--muted)] text-[var(--muted-foreground)]">Using {roleLabel(user.role)}</Badge>}
             {user.isVerified ? (
               <Badge className="bg-[var(--success-soft)] text-[var(--success-ink)]">Verified</Badge>
             ) : (
@@ -629,7 +646,7 @@ function UserDetailModal({
 
           {/* Role-specific. Only the fields this role actually has -- an account
               that never carries a value is not shown a field saying so. */}
-          {user.role === 'rider' && (
+          {originalRole === 'rider' && (
             <>
               <DetailField icon={<Hash className="w-4 h-4" />} label="TODA Plate">
                 {user.todaPlate || <NotSet />}
@@ -643,14 +660,14 @@ function UserDetailModal({
             </>
           )}
 
-          {user.role === 'customer' && (
+          {originalRole === 'customer' && (
             <DetailField icon={<MapPin className="w-4 h-4" />} label="Address">
               {user.address || <NotSet />}
             </DetailField>
           )}
         </div>
 
-        {user.role === 'business' && (
+        {originalRole === 'business' && (
           <div>
             <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-1.5">
               Restaurant
@@ -771,7 +788,7 @@ export default function AdminUsers() {
         .select('*, restaurants(name, address, subtitle, rating, is_open, cuisine, delivery_time, logo_image)')
         .order('name', { ascending: true });
       if (isRiderAdmin && riderAdminTerminalId) {
-        usersQuery = usersQuery.eq('role', 'rider').eq('terminal_id', riderAdminTerminalId);
+        usersQuery = usersQuery.eq('original_role', 'rider').eq('terminal_id', riderAdminTerminalId);
       }
       const { data: supabaseUsers, error } = await usersQuery;
 
@@ -792,6 +809,7 @@ export default function AdminUsers() {
         email: u.email,
         phone: u.phone,
         role: u.role,
+        originalRole: u.original_role || u.role,
         isVerified: u.is_verified,
         createdAt: u.created_at,
         password: '',
@@ -821,10 +839,10 @@ export default function AdminUsers() {
       const adminType = user?.adminType;
       // The database query is scoped too, so records from other terminals are
       // never fetched into a Driver Admin's browser in the first place.
-      let filteredUsers = allUsers.filter(u => u.role !== 'admin' && !isSuperAdminEmail(u.email));
+      let filteredUsers = allUsers.filter(u => originalRoleOf(u) !== 'admin' && !isSuperAdminEmail(u.email));
       if (adminType === 'rider') {
         filteredUsers = filteredUsers.filter(
-          u => u.role === 'rider' && u.terminalId === riderAdminTerminalId,
+          u => originalRoleOf(u) === 'rider' && u.terminalId === riderAdminTerminalId,
         );
       }
 
@@ -850,11 +868,11 @@ export default function AdminUsers() {
       if (!usersJson) return;
       const allUsers: StoredUser[] = JSON.parse(usersJson);
       if (!Array.isArray(allUsers)) return;
-      let filteredUsers = allUsers.filter(u => u.role !== 'admin' && !isSuperAdminEmail(u.email));
+      let filteredUsers = allUsers.filter(u => originalRoleOf(u) !== 'admin' && !isSuperAdminEmail(u.email));
       if (user?.adminType === 'rider') {
         filteredUsers = riderAdminTerminalId
           ? filteredUsers.filter(u =>
-              u.role === 'rider' &&
+              originalRoleOf(u) === 'rider' &&
               ((u as StoredUser & { terminal_id?: string }).terminalId ||
                 (u as StoredUser & { terminal_id?: string }).terminal_id) === riderAdminTerminalId,
             )
@@ -1006,7 +1024,7 @@ export default function AdminUsers() {
     const matchesRole =
       user?.adminType === 'rider' ||
       filterRole === "all" ||
-      u.role === filterRole;
+      originalRoleOf(u) === filterRole;
     const matchesStatus =
       filterStatus === "all" ||
       (filterStatus === "verified" && u.isVerified) ||
@@ -1016,7 +1034,7 @@ export default function AdminUsers() {
     const matchesTerminal =
       user?.adminType === 'rider' ||
       filterTerminal === "all" ||
-      (u.role === 'rider' && (filterTerminal === "unassigned" ? !u.terminalId : u.terminalId === filterTerminal));
+      (originalRoleOf(u) === 'rider' && (filterTerminal === "unassigned" ? !u.terminalId : u.terminalId === filterTerminal));
 
     return matchesSearch && matchesRole && matchesStatus && matchesTerminal;
   });
@@ -1209,9 +1227,9 @@ export default function AdminUsers() {
 
   const stats = {
     total: users.length,
-    customers: users.filter(u => u.role === 'customer').length,
-    riders: users.filter(u => u.role === 'rider').length,
-    businesses: users.filter(u => u.role === 'business').length,
+    customers: users.filter(u => originalRoleOf(u) === 'customer').length,
+    riders: users.filter(u => originalRoleOf(u) === 'rider').length,
+    businesses: users.filter(u => originalRoleOf(u) === 'business').length,
     verified: users.filter(u => u.isVerified).length,
     pending: users.filter(u => !u.isVerified).length,
   };
@@ -1375,14 +1393,14 @@ export default function AdminUsers() {
                     <div className="flex items-center gap-3">
                       <div
                         className={`w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center ${
-                          u.role === 'customer'
+                          originalRoleOf(u) === 'customer'
                             ? 'bg-[var(--success-soft)]'
-                            : u.role === 'rider'
+                            : originalRoleOf(u) === 'rider'
                               ? 'bg-[var(--info-soft)]'
                               : 'bg-[var(--violet-soft)]'
                         }`}
                       >
-                        {getRoleIcon(u.role)}
+                        {getRoleIcon(originalRoleOf(u))}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-[var(--ink)] break-words">
@@ -1395,9 +1413,10 @@ export default function AdminUsers() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Badge className={getRoleBadgeColor(u.role)}>
-                        {u.role === 'rider' ? 'Driver' : u.role === 'business' ? 'Business' : 'Customer'}
+                      <Badge className={getRoleBadgeColor(originalRoleOf(u))}>
+                        {roleLabel(originalRoleOf(u))}
                       </Badge>
+                      {u.role !== originalRoleOf(u) && <Badge className="bg-[var(--muted)] text-[var(--muted-foreground)]">Using {roleLabel(u.role)}</Badge>}
                       {u.isVerified ? (
                         <Badge className="bg-[var(--success-soft)] text-[var(--success-ink)]">
                           Verified
@@ -1436,7 +1455,7 @@ export default function AdminUsers() {
                         scope="col"
                         className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider"
                       >
-                        Role
+                        Original role
                       </th>
                       <th
                         scope="col"
@@ -1480,14 +1499,14 @@ export default function AdminUsers() {
                           >
                             <div
                               className={`w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center ${
-                                u.role === 'customer'
+                                originalRoleOf(u) === 'customer'
                                   ? 'bg-[var(--success-soft)]'
-                                  : u.role === 'rider'
+                                  : originalRoleOf(u) === 'rider'
                                     ? 'bg-[var(--info-soft)]'
                                     : 'bg-[var(--violet-soft)]'
                               }`}
                             >
-                              {getRoleIcon(u.role)}
+                              {getRoleIcon(originalRoleOf(u))}
                             </div>
                             <div className="min-w-0">
                               <p className="text-sm font-bold text-[var(--ink)] break-words">
@@ -1512,22 +1531,23 @@ export default function AdminUsers() {
                                 <button
                                   type="button"
                                   onClick={() => setRoleEditForUserId(u.id)}
-                                  aria-label={`Change role for ${displayNameOf(u)}, currently ${u.role}`}
+                                  aria-label={`Change original role for ${displayNameOf(u)}, ${roleLabel(originalRoleOf(u))}; currently using ${roleLabel(u.role)}`}
                                   aria-haspopup="dialog"
                                   className="min-h-11 max-w-full flex items-center gap-1 rounded-lg group"
                                 >
                                   <span className="group-hover:opacity-80 transition-opacity">
-                                    <Badge className={getRoleBadgeColor(u.role)}>
-                                      {u.role === 'rider' ? 'Driver' : u.role === 'business' ? 'Business' : 'Customer'}
+                                    <Badge className={getRoleBadgeColor(originalRoleOf(u))}>
+                                      {roleLabel(originalRoleOf(u))}
                                     </Badge>
                                   </span>
                                   <ChevronDown className="size-3 shrink-0 text-[var(--muted-foreground)]" aria-hidden="true" />
                                 </button>
                               ) : (
-                                <Badge className={getRoleBadgeColor(u.role)}>
-                                  {u.role === 'rider' ? 'Driver' : u.role === 'business' ? 'Business' : 'Customer'}
+                                <Badge className={getRoleBadgeColor(originalRoleOf(u))}>
+                                  {roleLabel(originalRoleOf(u))}
                                 </Badge>
                               )}
+                              {u.role !== originalRoleOf(u) && <Badge className="ml-2 bg-[var(--muted)] text-[var(--muted-foreground)]">Using {roleLabel(u.role)}</Badge>}
                             </td>
                             <td className="px-4 py-2">
                               {u.isVerified ? (
@@ -1698,7 +1718,7 @@ export default function AdminUsers() {
         open={!!userBeingReRole}
         title={userBeingReRole ? `Change ${displayNameOf(userBeingReRole)}'s Role` : 'Change Role'}
         options={roleChangeOptions}
-        value={userBeingReRole?.role ?? null}
+        value={userBeingReRole ? originalRoleOf(userBeingReRole) : null}
         onPick={role => {
           const target = userBeingReRole;
           // Closed first: handleSaveRole opens the confirmation modal, and two

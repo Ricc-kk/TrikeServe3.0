@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(255) NOT NULL,
   phone VARCHAR(20) NOT NULL,
   role VARCHAR(50) NOT NULL CHECK (role IN ('customer', 'rider', 'business', 'admin')),
+  original_role VARCHAR(50) CHECK (original_role IN ('customer', 'rider', 'business', 'admin')),
   is_verified BOOLEAN DEFAULT false,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

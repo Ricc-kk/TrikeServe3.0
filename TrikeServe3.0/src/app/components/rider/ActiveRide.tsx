@@ -1994,11 +1994,16 @@ export default function ActiveRide() {
     setPickupOrderStatusError(null);
     setIsSavingPickupOrderStatus(true);
     try {
-      const { error } = await supabaseHelpers.markDeliveryOrderPickedUp(ride.orderId, ride.orderNumber);
+      const { error } = await supabaseHelpers.markDeliveryOrderPickedUp(ride.orderId, ride.orderNumber, user?.id);
       if (error) throw error;
     } catch (error) {
       console.error('[ActiveRide] Could not mark delivery order as picked up:', error);
-      setPickupOrderStatusError('The customer order status could not be updated. Retry to sync it.');
+      const reason = error instanceof Error ? error.message : String((error as any)?.message || '');
+      setPickupOrderStatusError(
+        reason
+          ? `The customer order status could not be updated. ${reason} Retry to sync it.`
+          : 'The customer order status could not be updated. Retry to sync it.',
+      );
     } finally {
       setIsSavingPickupOrderStatus(false);
     }

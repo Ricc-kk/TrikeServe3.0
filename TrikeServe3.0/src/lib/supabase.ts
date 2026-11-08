@@ -4423,15 +4423,43 @@ export const supabaseHelpers = {
 
   // Mark an order picked up through a scoped database function. The function
   // verifies that the signed-in rider accepted a delivery request for this order.
-  async markDeliveryOrderPickedUp(orderId?: string, orderNumber?: string) {
+  async markDeliveryOrderPickedUp(orderId?: string, orderNumber?: string, riderId?: string) {
     if (!orderId && !orderNumber) {
       return { data: null, error: new Error('Missing order identifier') };
     }
 
-    return supabase.rpc('mark_delivery_order_picked_up', {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) return { data: null, error: sessionError };
+
+    // Legacy/dev sign-ins can have an app user in localStorage without a
+    // Supabase Auth JWT. In that case the scoped RPC cannot see auth.uid(); use
+    // the existing order-status update path, which remains subject to the
+    // project's orders RLS policies. Authenticated riders always use the RPC.
+    if (!session?.user) {
+      if (!riderId) {
+        return { data: null, error: new Error('A signed-in rider is required') };
+      }
+      return this.updateDeliveryOrderStatus(orderId, orderNumber, 'picked_up');
+    }
+
+    if (riderId && session.user.id !== riderId) {
+      return { data: null, error: new Error('The signed-in account does not match this rider') };
+    }
+
+    const result = await supabase.rpc('mark_delivery_order_picked_up', {
       p_order_id: orderId || null,
       p_order_number: orderNumber || null,
     });
+
+    // A missing RPC can happen while a database migration is being rolled out
+    // or its PostgREST schema cache is stale. Retry through the normal RLS
+    // checked update so installations that still permit order status updates
+    // keep the customer's order in sync.
+    if (result.error?.code === 'PGRST202') {
+      return this.updateDeliveryOrderStatus(orderId, orderNumber, 'picked_up');
+    }
+
+    return result;
   },
 
   async updateOrder(orderId: string, updates: any) {
