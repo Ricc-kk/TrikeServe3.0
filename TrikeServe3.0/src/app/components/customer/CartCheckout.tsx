@@ -8,6 +8,7 @@ import {
   Info,
   Check,
   AlertCircle,
+  X,
 } from "lucide-react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { Card } from "../ui/card";
@@ -119,6 +120,15 @@ export default function CartCheckout() {
    */
   const [addressError, setAddressError] = useState(false);
   const [deliveryBoundaryError, setDeliveryBoundaryError] = useState<string | null>(null);
+  const [outsideRouteBookingPrompt, setOutsideRouteBookingPrompt] = useState<{
+    terminalId: string;
+    terminalName: string;
+    addressKey: string;
+  } | null>(null);
+  const acceptedOutsideRouteDeliveryRef = useRef<{
+    terminalId: string;
+    addressKey: string;
+  } | null>(null);
 
   /*
    * Bring the field back into view when it becomes the thing that is wrong.
@@ -434,6 +444,7 @@ export default function CartCheckout() {
 
   const handlePlaceOrder = async () => {
     if (!restaurant) return;
+    const deliveryAddressKey = `${selectedAddress.full.trim().toLowerCase()}|${selectedAddress.lat.toFixed(6)},${selectedAddress.lng.toFixed(6)}`;
     if (!hasSelectedAddress) {
       /*
        * Send them to the field, not to the map.
@@ -476,8 +487,36 @@ export default function CartCheckout() {
           return;
         }
         if (!deliveryRoute.allowed) {
-          setDeliveryBoundaryError('This address is outside every enabled terminal delivery route. Choose an address within a covered route.');
-          return;
+          const acceptedAssignment = acceptedOutsideRouteDeliveryRef.current?.addressKey === deliveryAddressKey
+            ? acceptedOutsideRouteDeliveryRef.current
+            : null;
+          if (!acceptedAssignment) {
+            let nearestTerminal = deliveryQuote.terminalId
+              ? { id: deliveryQuote.terminalId, name: deliveryQuote.terminalName || 'nearest terminal' }
+              : null;
+
+            if (!nearestTerminal) {
+              const assignment = await findDeliveryTerminalForOrder({
+                dropoffLat: deliveryPoint.lat,
+                dropoffLng: deliveryPoint.lng,
+                requireRoute: false,
+              });
+              nearestTerminal = assignment.terminal;
+            }
+
+            if (!nearestTerminal) {
+              setDeliveryBoundaryError('No active terminal is available to receive this delivery request.');
+              return;
+            }
+
+            setDeliveryBoundaryError(null);
+            setOutsideRouteBookingPrompt({
+              terminalId: nearestTerminal.id,
+              terminalName: nearestTerminal.name || 'nearest terminal',
+              addressKey: deliveryAddressKey,
+            });
+            return;
+          }
         }
         setDeliveryBoundaryError(null);
       } catch (error) {
@@ -491,7 +530,10 @@ export default function CartCheckout() {
 
     // The quote already resolved the nearest route-serving terminal from the
     // restaurant pickup and the configured delivery distance rate.
-    const resolvedTerminalId = deliveryQuote.terminalId;
+    const acceptedTerminalId = acceptedOutsideRouteDeliveryRef.current?.addressKey === deliveryAddressKey
+      ? acceptedOutsideRouteDeliveryRef.current.terminalId
+      : null;
+    const resolvedTerminalId = acceptedTerminalId ?? deliveryQuote.terminalId;
     if (imageProofRequired && !proofFile) {
       setProofError('Upload your GCash payment proof before placing the order.');
       setProofValidationAttempt((attempt) => attempt + 1);
@@ -890,6 +932,7 @@ export default function CartCheckout() {
 
       setPlacedOrderNumber(order.orderNumber);
       setShowOrderConfirmation(true);
+      acceptedOutsideRouteDeliveryRef.current = null;
     } catch (error) {
       console.error("[Cart] Unexpected error in handlePlaceOrder:", error);
     }
@@ -1108,6 +1151,7 @@ export default function CartCheckout() {
             onClick={() => {
               setAddressError(false);
               setDeliveryBoundaryError(null);
+              acceptedOutsideRouteDeliveryRef.current = null;
               const currentIndex = window.history.state?.idx;
               navigate("/customer/delivery-address", {
                 state: {
@@ -1376,6 +1420,65 @@ export default function CartCheckout() {
           {isUploadingProof ? 'Uploading proof…' : isDeliveryQuoteLoading ? 'Calculating delivery…' : 'Place Order'}
         </button>
       </div>
+
+      {/* Outside-route delivery warning */}
+      {outsideRouteBookingPrompt && (
+        <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="outside-route-delivery-title">
+          <Card className="relative w-full max-w-sm bg-surface p-8 text-center" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              aria-label="Close delivery coverage notice"
+              onClick={() => {
+                acceptedOutsideRouteDeliveryRef.current = null;
+                setOutsideRouteBookingPrompt(null);
+              }}
+              className="absolute right-3 top-3 grid size-9 place-items-center rounded-full text-[var(--muted-foreground)] transition-colors hover:bg-black/5 hover:text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
+            >
+              <X className="size-5" aria-hidden="true" />
+            </button>
+            <div className="mx-auto mb-4 grid size-20 place-items-center rounded-full bg-[var(--amber-soft)]">
+              <MapPin className="size-9 text-[var(--amber-ink)]" aria-hidden="true" />
+            </div>
+            <h2 id="outside-route-delivery-title" className="mb-2 text-xl font-bold text-[var(--amber-ink)]">
+              Delivery address outside TODA routes
+            </h2>
+            <p className="mb-6 text-sm text-[var(--muted-foreground)]">
+              This address is outside every enabled TODA route. We’ll send your request to the nearest terminal,
+              {' '}<strong>{outsideRouteBookingPrompt.terminalName}</strong>. A driver may take longer to reach you,
+              so it may take more time for the delivery request to be accepted.
+            </p>
+            <div className="space-y-3">
+              <Button
+                type="button"
+                onClick={() => {
+                  const prompt = outsideRouteBookingPrompt;
+                  if (!prompt) return;
+                  acceptedOutsideRouteDeliveryRef.current = {
+                    terminalId: prompt.terminalId,
+                    addressKey: prompt.addressKey,
+                  };
+                  setOutsideRouteBookingPrompt(null);
+                  void handlePlaceOrder();
+                }}
+                className="w-full bg-[var(--primary)] py-3 font-bold text-white"
+              >
+                Continue with nearest terminal
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  acceptedOutsideRouteDeliveryRef.current = null;
+                  setOutsideRouteBookingPrompt(null);
+                }}
+                className="w-full py-3 font-semibold"
+              >
+                Change address
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Order Confirmation Modal */}
       {showOrderConfirmation && (
