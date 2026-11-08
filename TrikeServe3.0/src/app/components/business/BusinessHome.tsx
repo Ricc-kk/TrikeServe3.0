@@ -470,7 +470,10 @@ export default function BusinessHome() {
   const toggleStoreStatus = async (newStatus: boolean) => {
     if (!user?.id) return;
 
+    const previousIsStoreOpen = isStoreOpen;
+    const previousForceOpenUntil = forceOpenUntil;
     setIsStoreOpen(newStatus);
+    if (!newStatus) setForceOpenUntil(null);
 
     try {
       // Get restaurant record
@@ -502,7 +505,8 @@ export default function BusinessHome() {
 
         if (error) {
           console.error('Error creating restaurant:', error);
-          setIsStoreOpen(!newStatus); // Revert on error
+          setIsStoreOpen(previousIsStoreOpen);
+          setForceOpenUntil(previousForceOpenUntil);
           return;
         }
       } else {
@@ -528,7 +532,8 @@ export default function BusinessHome() {
 
         if (error) {
           console.error('Error updating store status:', error);
-          setIsStoreOpen(!newStatus); // Revert on error
+          setIsStoreOpen(previousIsStoreOpen);
+          setForceOpenUntil(previousForceOpenUntil);
           return;
         }
       }
@@ -536,7 +541,8 @@ export default function BusinessHome() {
       console.log('[BusinessHome] Store status updated to:', newStatus);
     } catch (error) {
       console.error('Error toggling store status:', error);
-      setIsStoreOpen(!newStatus); // Revert on error
+      setIsStoreOpen(previousIsStoreOpen);
+      setForceOpenUntil(previousForceOpenUntil);
     }
   };
 
@@ -1413,7 +1419,9 @@ const clearHours = () => {
                 */}
                 <p className="mt-2 text-xs text-[var(--muted-foreground)]">
                   {shownOpen ? (
-                    hoursConfigured ? (
+                    forcedOpen ? (
+                      <>{storeState.detail}</>
+                    ) : hoursConfigured ? (
                       <>Within your trading hours.</>
                     ) : (
                       <>
