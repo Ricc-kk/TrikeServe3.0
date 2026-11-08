@@ -323,7 +323,16 @@ export default function CustomizationModal({
                                   : "border-[var(--border)]"
                               }`}
                             >
-                              <div className="flex min-w-0 items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => handleOptionToggle(group.id, option.id, group.maxSelections)}
+                                disabled={reachedOptionLimit}
+                                aria-pressed={isSelected}
+                                aria-label={`${isSelected ? "Deselect" : "Select"} ${option.name}`}
+                                className={`flex min-w-0 flex-1 items-center gap-3 border-0 bg-transparent p-0 text-left ${
+                                  reachedOptionLimit ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+                                }`}
+                              >
                                 <div
                                   className={`grid size-5 shrink-0 place-items-center rounded-md border-2 ${
                                     isSelected
@@ -342,38 +351,30 @@ export default function CustomizationModal({
                                     {option.price > 0 ? `+₱${option.price.toFixed(2)} each` : "No extra charge"}
                                   </span>
                                 </div>
-                              </div>
-                              <div className="flex shrink-0 items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOptionQuantityChange(group.id, option.id, group.maxSelections, -1)}
-                                  disabled={selectedQuantity === 0}
-                                  aria-label={`Remove one ${option.name}`}
-                                  className={`grid size-8 place-items-center rounded-full border transition-all active:scale-90 ${
-                                    selectedQuantity === 0
-                                      ? "border-[var(--border)] text-[var(--border)]"
-                                      : "border-[var(--border)] text-[var(--ink)] hover:bg-[var(--muted)]"
-                                  }`}
-                                >
-                                  <Minus className="size-4" aria-hidden="true" />
-                                </button>
-                                <span aria-live="polite" className="w-5 text-center font-bold text-[var(--ink)]">
-                                  {selectedQuantity}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOptionQuantityChange(group.id, option.id, group.maxSelections, 1)}
-                                  disabled={reachedOptionLimit}
-                                  aria-label={`Add one ${option.name}`}
-                                  className={`grid size-8 place-items-center rounded-full transition-all active:scale-90 ${
-                                    reachedOptionLimit
-                                      ? "bg-[var(--muted)] text-[var(--muted-foreground)]"
-                                      : "bg-[var(--primary)] text-white hover:opacity-90"
-                                  }`}
-                                >
-                                  <Plus className="size-4" aria-hidden="true" />
-                                </button>
-                              </div>
+                              </button>
+                              {isSelected && (
+                                <div className="flex shrink-0 items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOptionQuantityChange(group.id, option.id, group.maxSelections, -1)}
+                                    aria-label={`Remove one ${option.name}`}
+                                    className="grid size-8 place-items-center rounded-full border border-[var(--border)] text-[var(--ink)] transition-all hover:bg-[var(--muted)] active:scale-90"
+                                  >
+                                    <Minus className="size-4" aria-hidden="true" />
+                                  </button>
+                                  <span aria-live="polite" className="w-5 text-center font-bold text-[var(--ink)]">
+                                    {selectedQuantity}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOptionQuantityChange(group.id, option.id, group.maxSelections, 1)}
+                                    aria-label={`Add one ${option.name}`}
+                                    className="grid size-8 place-items-center rounded-full bg-[var(--primary)] text-white transition-all hover:opacity-90 active:scale-90"
+                                  >
+                                    <Plus className="size-4" aria-hidden="true" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           );
                         }
