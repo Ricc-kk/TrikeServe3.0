@@ -12,8 +12,6 @@ const webRideServicesEnabled =
   import.meta.env.VITE_ENABLE_WEB_RIDE_SERVICES?.trim().toLowerCase() === "true";
 const webDriverQueueJoiningEnabled =
   import.meta.env.VITE_ENABLE_WEB_DRIVER_QUEUE_JOINING?.trim().toLowerCase() === "true";
-const webFoodDeliveryEnabled =
-  import.meta.env.VITE_ENABLE_WEB_FOOD_DELIVERY?.trim().toLowerCase() === "true";
 const webDriverFoodDeliveryEnabled =
   import.meta.env.VITE_ENABLE_WEB_DRIVER_FOOD_DELIVERY?.trim().toLowerCase() === "true";
 
@@ -56,20 +54,22 @@ export function useDevModeOverride(feature: DevModeFeature): [boolean, (enabled:
   return [!devModeEnabled || featureEnabled, updateFeature];
 }
 
-/** Features that are normally off and can only be enabled while Dev Mode is on. */
+/** Website feature flags are the normal setting; Dev Mode provides a local override. */
 export function useDevModeOnlyFeature(feature: DevModeFeature): boolean {
   const [devModeEnabled] = useDevModeStatus();
   const [featureEnabled] = useDevModeFeature(feature);
   const canEnableFromWebsiteEnv =
     (feature === "customerRideBooking" && webRideServicesEnabled) ||
     (feature === "driverQueueJoining" && webDriverQueueJoiningEnabled) ||
-    (feature === "foodDelivery" && webFoodDeliveryEnabled) ||
     (feature === "driverFoodDelivery" && webDriverFoodDeliveryEnabled);
   const isWebsiteFeature = feature === "customerRideBooking" ||
-    feature === "driverQueueJoining" || feature === "foodDelivery" || feature === "driverFoodDelivery";
-  // Web capabilities use explicit build flags in production. Dev Mode remains
-  // available for testing them in local development builds.
-  const canEnableFromDevMode = !isWebsiteFeature || import.meta.env.DEV;
+    feature === "driverQueueJoining" || feature === "driverFoodDelivery";
 
-  return canEnableFromWebsiteEnv || (canEnableFromDevMode && devModeEnabled && featureEnabled);
+  if (isWebsiteFeature) {
+    // Keep deployed website defaults outside Dev Mode, but let the developer
+    // switches override those defaults in any build.
+    return devModeEnabled ? featureEnabled : canEnableFromWebsiteEnv;
+  }
+
+  return !devModeEnabled || featureEnabled;
 }

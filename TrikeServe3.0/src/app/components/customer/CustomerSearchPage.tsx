@@ -37,7 +37,6 @@ type Terminal = {
  */
 export default function CustomerSearchPage() {
   const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
-  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
   const navigate = useNavigate();
   const location = useLocation();
   // Search is reached from the hub, but it is also the landing screen for a
@@ -252,13 +251,7 @@ export default function CustomerSearchPage() {
           />
         )}
 
-        {showFood && (foodDeliveryEnabled ? (
-          <RecommendedRestaurants query={query} fallbackOrigin={fallbackOrigin} />
-        ) : (
-          <p className="rounded-2xl border border-line bg-card p-4 text-sm text-[var(--muted-foreground)]" role="status">
-            Food delivery is currently unavailable on the website.
-          </p>
-        ))}
+        {showFood && <RecommendedRestaurants query={query} fallbackOrigin={fallbackOrigin} />}
 
       </main>
 

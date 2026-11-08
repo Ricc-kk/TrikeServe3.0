@@ -31,7 +31,6 @@ interface MenuItem {
 
 export default function CustomerApp() {
   const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
-  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<MenuItem[]>([]);
   const [rideType, setRideType] = useState<'shared' | 'private' | null>(null);
@@ -197,9 +196,9 @@ export default function CustomerApp() {
             <div className="w-14 h-14 bg-gradient-to-br from-[var(--ink)] to-[var(--ink)] rounded-2xl flex items-center justify-center mb-3 mx-auto">
               <ShoppingBag className="w-7 h-7 text-white" />
             </div>
-            <h3 className="font-bold text-center text-[var(--ink)]">{foodDeliveryEnabled ? "Order Food" : "Delivery unavailable"}</h3>
+            <h3 className="font-bold text-center text-[var(--ink)]">Order Food</h3>
             <p className="text-xs text-center text-[var(--muted-foreground)] mt-1">
-              {foodDeliveryEnabled ? "Local delivery" : "Food delivery is currently unavailable on the website"}
+              Local delivery
             </p>
           </Card>
         </div>
@@ -213,8 +212,6 @@ export default function CustomerApp() {
 
           {/* Food Tab */}
           <TabsContent value="food" className="space-y-6">
-            {foodDeliveryEnabled ? (
-            <>
             {/* Popular Items */}
             <div>
               <h2 className="text-xl font-bold text-[var(--ink)] mb-4">Popular Items</h2>
@@ -275,12 +272,6 @@ export default function CustomerApp() {
                 ))}
               </div>
             </div>
-            </>
-            ) : (
-              <p className="rounded-2xl border border-line bg-card p-4 text-sm text-[var(--muted-foreground)]" role="status">
-                Food delivery is currently unavailable on the website.
-              </p>
-            )}
           </TabsContent>
 
           {/* History Tab */}
