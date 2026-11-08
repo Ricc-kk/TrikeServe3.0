@@ -73,3 +73,10 @@ export function useDevModeOnlyFeature(feature: DevModeFeature): boolean {
 
   return !devModeEnabled || featureEnabled;
 }
+
+/** A local developer override that applies only while Developer Mode is enabled. */
+export function useDevModeActiveFeature(feature: DevModeFeature): boolean {
+  const [devModeEnabled] = useDevModeStatus();
+  const [featureEnabled] = useDevModeFeature(feature);
+  return devModeEnabled && featureEnabled;
+}

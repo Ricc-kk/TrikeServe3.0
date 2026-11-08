@@ -15,7 +15,8 @@ import {
 } from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
 import { computeSharedRideFarePerPassenger, straightLineKm, type RideRates } from "@/lib/pricing";
-import { useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { normalizeTerminalRoutes } from "@/lib/terminalRoutes";
+import { useDevModeActiveFeature, useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
 
 interface AvailableLobby {
   id: string;
@@ -105,6 +106,7 @@ export default function BrowseAvailableLobbies({
 }: BrowseAvailableLobbiesProps) {
   const { user } = useAuth();
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
+  const allowRideBookingOutsideTerminal = useDevModeActiveFeature("allowRideBookingOutsideTerminal");
   const [sameRouteLobbyFilter] = useDevModeOverride("sameRouteLobbyFilter");
   const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
   const [lobbies, setLobbies] = useState<AvailableLobby[]>([]);
@@ -327,15 +329,17 @@ export default function BrowseAvailableLobbies({
       }
 
       if (enforceBoundary) {
-        const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
-        if (border.lookupFailed) {
-          setError("We couldn't verify terminal boundaries. Check your connection and try again.");
-          return;
-        }
-        if (!border.allowed) {
-          console.log('🚫 Lobby join pickup outside every terminal border:', pickupCoords);
-          setError("You're not at a terminal. Rides can only be booked from inside a terminal.");
-          return;
+        if (!allowRideBookingOutsideTerminal) {
+          const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
+          if (border.lookupFailed) {
+            setError("We couldn't verify terminal boundaries. Check your connection and try again.");
+            return;
+          }
+          if (!border.allowed) {
+            console.log('🚫 Lobby join pickup outside every terminal border:', pickupCoords);
+            setError("You're not at a terminal. Rides can only be booked from inside a terminal.");
+            return;
+          }
         }
 
         let routeAllowed = false;
@@ -348,10 +352,47 @@ export default function BrowseAvailableLobbies({
           }
 
           routeName = terminal.name || routeName;
-          routeAllowed = isPointWithinTerminalRoute(coords.lat, coords.lng, {
-            road: normalizeBoundaryRoad(terminal.boundary_polygon),
-            widthM: terminal.road_width_m,
-          });
+          const terminalRoutes = normalizeTerminalRoutes(terminal.routes)
+            .filter(route => route.points.length >= 2);
+          const selectedRouteId = routeId?.startsWith(`${terminalId}::`)
+            ? routeId.slice(terminalId.length + 2)
+            : routeId?.includes("::")
+              ? null
+              : routeId;
+          const selectedRoute = terminalRoutes.find(route => route.id === selectedRouteId) || null;
+          const selectedRouteIsDisabled = Boolean(selectedRoute && !selectedRoute.enabled);
+
+          if (selectedRoute?.enabled) {
+            routeAllowed = isPointWithinTerminalRoute(coords.lat, coords.lng, {
+              road: selectedRoute.points,
+              widthM: selectedRoute.buffer_m,
+            });
+          } else if (selectedRouteIsDisabled) {
+            routeAllowed = false;
+          } else if (routePoints && routePoints.length >= 2) {
+            // Older passenger rows may lack a route ID. The route geometry
+            // already used to match the lobby is a better fallback than the
+            // terminal's legacy single-road column.
+            routeAllowed = isPointWithinTerminalRoute(coords.lat, coords.lng, {
+              road: routePoints,
+              widthM: routeWidthM,
+            });
+          } else if (terminalRoutes.some(route => route.enabled)) {
+            routeAllowed = terminalRoutes.some(route => route.enabled && isPointWithinTerminalRoute(
+              coords.lat,
+              coords.lng,
+              { road: route.points, widthM: route.buffer_m },
+            ));
+          } else if (terminalRoutes.length > 0) {
+            // A configured but disabled route must not fall through to stale
+            // geometry from the legacy boundary_polygon column.
+            routeAllowed = false;
+          } else {
+            routeAllowed = isPointWithinTerminalRoute(coords.lat, coords.lng, {
+              road: normalizeBoundaryRoad(terminal.boundary_polygon),
+              widthM: terminal.road_width_m,
+            });
+          }
         } else {
           const route = await isPointWithinAnyTerminalRoute(coords.lat, coords.lng);
           if (route.lookupFailed) {

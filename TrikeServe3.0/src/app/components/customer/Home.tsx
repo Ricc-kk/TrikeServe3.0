@@ -47,7 +47,7 @@ import CustomerHubHeader from "./CustomerHubHeader";
 import RecommendedRestaurants from "./RecommendedRestaurants";
 import CustomerServiceHub from "./CustomerServiceHub";
 import CustomerCartPreview from "./CustomerCartPreview";
-import { useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { useDevModeActiveFeature, useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { getProfileInitials } from "@/lib/profileInitials";
 import {
   getShortestAvoidHighwaysRoadRoute,
@@ -403,6 +403,7 @@ export default function CustomerHome() {
   const activeShareLobbyStorageKey = user?.id ? customerActiveShareLobbyStorageKey(user.id) : null;
   const rideStateIdentity = user?.id ? `${user.id}:${user.role}` : null;
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
+  const allowRideBookingOutsideTerminal = useDevModeActiveFeature("allowRideBookingOutsideTerminal");
   const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
   const navigate = useNavigate();
   const location = useLocation();
@@ -2850,7 +2851,7 @@ export default function CustomerHome() {
       return;
     }
 
-    if (enforceBoundary && pickingPickup && area && !isPointInPolygon(lat, lng, area)) {
+    if (enforceBoundary && pickingPickup && area && !allowRideBookingOutsideTerminal && !isPointInPolygon(lat, lng, area)) {
       setPickerBoundaryWarning(`That spot is outside ${terminal?.name || 'this terminal'}. Tap inside the shaded area.`);
       return;
     }
@@ -3014,7 +3015,7 @@ export default function CustomerHome() {
 
     if (!enforceBoundary) return true;
 
-    if (!acceptedOutsideRoutePickup) {
+    if (!allowRideBookingOutsideTerminal) {
       const selectedTerminalArea = selectedTerminalBoundary.area;
 
       // Gate 1: the customer must be at a terminal.

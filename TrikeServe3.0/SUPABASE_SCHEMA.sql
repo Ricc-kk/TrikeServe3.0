@@ -629,6 +629,53 @@ CREATE POLICY "Riders can accept open delivery requests" ON public.ride_requests
     )
   );
 
+DROP POLICY IF EXISTS "Riders can view open private ride requests" ON public.ride_requests;
+CREATE POLICY "Riders can view open private ride requests" ON public.ride_requests
+  FOR SELECT TO authenticated
+  USING (
+    ride_type = 'special'
+    AND order_id IS NULL
+    AND status = 'pending'
+    AND driver_id IS NULL
+    AND accepted_driver_id IS NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+    )
+  );
+
+DROP POLICY IF EXISTS "Riders can accept open private ride requests" ON public.ride_requests;
+CREATE POLICY "Riders can accept open private ride requests" ON public.ride_requests
+  FOR UPDATE TO authenticated
+  USING (
+    ride_type = 'special'
+    AND order_id IS NULL
+    AND status = 'pending'
+    AND driver_id IS NULL
+    AND accepted_driver_id IS NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+    )
+  )
+  WITH CHECK (
+    ride_type = 'special'
+    AND order_id IS NULL
+    AND status = 'accepted'
+    AND driver_id = auth.uid()
+    AND accepted_driver_id = auth.uid()
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+    )
+  );
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON favorites TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON favorite_menu_items TO authenticated;
 
@@ -684,6 +731,8 @@ CREATE POLICY "Anyone signed in can read searches" ON restaurant_searches
   FOR SELECT USING (auth.uid() IS NOT NULL);
 
 -- RLS Policies for users
+GRANT SELECT ON public.users TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.can_rider_view_active_customer_profile(p_customer_id UUID)
 RETURNS BOOLEAN
 LANGUAGE SQL
@@ -734,6 +783,45 @@ DROP POLICY IF EXISTS "Riders can view profiles in their active rides" ON public
 CREATE POLICY "Riders can view profiles in their active rides" ON public.users
   FOR SELECT TO authenticated
   USING (public.can_rider_view_active_customer_profile(id));
+
+-- Drivers can also see a passenger's profile while previewing that passenger's
+-- open private ride. Delivery requests are excluded because they have order_id.
+CREATE OR REPLACE FUNCTION public.can_rider_view_pending_private_ride_profile(
+  p_customer_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $function$
+  SELECT auth.uid() IS NOT NULL
+    AND p_customer_id IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM public.ride_requests AS ride
+      WHERE ride.customer_id = p_customer_id
+        AND ride.ride_type = 'special'
+        AND ride.order_id IS NULL
+        AND ride.status = 'pending'
+        AND ride.driver_id IS NULL
+        AND ride.accepted_driver_id IS NULL
+    );
+$function$;
+REVOKE ALL ON FUNCTION public.can_rider_view_pending_private_ride_profile(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.can_rider_view_pending_private_ride_profile(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION public.can_rider_view_pending_private_ride_profile(UUID) TO authenticated;
+
+DROP POLICY IF EXISTS "Riders can view profiles for pending private ride previews" ON public.users;
+CREATE POLICY "Riders can view profiles for pending private ride previews" ON public.users
+  FOR SELECT TO authenticated
+  USING (public.can_rider_view_pending_private_ride_profile(id));
 
 CREATE POLICY "Users can update their own profile" ON users
   FOR UPDATE USING (auth.uid()::text = id::text);

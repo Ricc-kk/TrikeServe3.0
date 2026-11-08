@@ -108,12 +108,14 @@ interface Order {
   driverStatus?: string | null;
   /** Whatever the rider app last wrote in `driver_status_message`. */
   driverMessage?: string | null;
+  /** The current, non-cancelled delivery request for this order. */
+  driverRequestId?: string | null;
   /** Why the order was cancelled, and which side cancelled it. */
   cancelReason?: string | null;
   cancelledBy?: string | null;
 }
 
-type ActiveOrderStatusFilter = 'pending' | 'payment-confirmed' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way';
+type ActiveOrderStatusFilter = 'pending' | 'payment-confirmed' | 'confirmed' | 'preparing' | 'on-the-way';
 
 
 export default function BusinessOrders() {
@@ -138,6 +140,9 @@ export default function BusinessOrders() {
   const activatedDriverConversationIdsRef = useRef(new Set<string>());
   /** The one dialog left in this flow: confirming the GCash payment. */
   const [confirmAction, setConfirmAction] = useState<'accept' | null>(null);
+  const [showReassignDriverPrompt, setShowReassignDriverPrompt] = useState(false);
+  const [isReassigningDriver, setIsReassigningDriver] = useState(false);
+  const [reassignDriverError, setReassignDriverError] = useState<string | null>(null);
   // Decline collects a reason before the order is cancelled.
   const [showDeclinePrompt, setShowDeclinePrompt] = useState(false);
   // Confirming the GCash transfer. Its own flag and message because it is the
@@ -306,6 +311,7 @@ export default function BusinessOrders() {
         o.driverPlate === fresh.driverPlate &&
         o.driverRating === fresh.driverRating &&
         o.driverRequested === fresh.driverRequested &&
+        o.driverRequestId === fresh.driverRequestId &&
         o.driverStatus === fresh.driverStatus &&
         o.driverMessage === fresh.driverMessage &&
         o.deliveryProofUrl === fresh.deliveryProofUrl
@@ -320,6 +326,7 @@ export default function BusinessOrders() {
         driverPlate: fresh.driverPlate,
         driverRating: fresh.driverRating,
         driverRequested: fresh.driverRequested,
+        driverRequestId: fresh.driverRequestId,
         driverStatus: fresh.driverStatus,
         driverMessage: fresh.driverMessage,
         deliveryProofUrl: fresh.deliveryProofUrl,
@@ -363,6 +370,11 @@ export default function BusinessOrders() {
     : Boolean(selectedOrder?.driverId || selectedOrder?.driverName || selectedOrder?.status === 'on-the-way');
   const normalizedDriverStatus = liveDriverStatus?.trim().toLowerCase().replace(/_/g, '-') ?? '';
   const isDriverAtRestaurant = normalizedDriverStatus === 'arrived' || normalizedDriverStatus === 'at-restaurant';
+  const driverHasReachedRestaurant = [
+    'arrived', 'at-restaurant', 'arrived-at-restaurant', 'at-pickup',
+    'picked-up', 'picked-up-order', 'in-progress', 'on-the-way-to-customer',
+    'dropped-off', 'arrived-at-drop-off', 'awaiting-payment', 'completed',
+  ].includes(normalizedDriverStatus);
   const customerLocation = (() => {
     const address = selectedOrder?.address || '';
     const coordinates = address.includes('|') ? address.split('|').slice(1).join('|') : address;
@@ -376,7 +388,7 @@ export default function BusinessOrders() {
   const hasAssignedDriver = Boolean(selectedOrder?.driverId || selectedOrder?.driverName || driverLocation);
   const showActiveDeliveryMap = Boolean(
     selectedOrder?.deliveryMode === 'delivery' &&
-    ['preparing', 'ready', 'confirmed', 'on-the-way'].includes(selectedOrder.status) &&
+    !['delivered', 'completed', 'cancelled'].includes(String(selectedOrder.status).toLowerCase().replace(/_/g, '-')) &&
     hasAssignedDriver,
   );
 
@@ -465,63 +477,44 @@ export default function BusinessOrders() {
           setDriverLocation({ lat: freshOrder.driver_lat, lng: freshOrder.driver_lng });
         }
 
-        /*
-         * The rider accepting is the single fact this sheet most needs, and it is
-         * written here — to `orders`, by the rider's accept handler — while the
-         * row was fetched and thrown away. The three-second poll is the fastest
-         * signal available (the list refresh is on five), so a rider accepting left
-         * "Finding Rider" sitting on screen for up to five seconds after they were
-         * already assigned, which is the exact gap the shop was watching.
-         */
-        if (freshOrder?.driver_name) {
-          setSelectedOrder((o) =>
-            o && o.id === selectedOrder.id && o.driverName !== freshOrder.driver_name
-              ? { ...o, driverName: freshOrder.driver_name, driverRequested: true }
-              : o,
-          );
-        }
-
         // The driver's live GPS *and* phase live on the ride request that carries
         // this order (`ride_requests.driver_*`); the orders table may not even
         // have driver_lat/lng columns.
         const { data: freshRide } = await supabase
           .from('ride_requests')
-          .select('driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng, accepted_driver_id, driver_name, driver_photo, driver_plate, driver_rating')
+          .select('id, status, created_at, driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng, accepted_driver_id, driver_name, driver_photo, driver_plate, driver_rating')
           .eq('order_id', selectedOrder.id)
-          .order('updated_at', { ascending: false })
+          .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (freshRide?.driver_lat && freshRide?.driver_lng) {
+        const freshRideStatus = String(freshRide?.status || '').trim().toLowerCase().replace(/_/g, '-');
+        const freshRideIsCurrent = Boolean(freshRide && freshRideStatus !== 'cancelled');
+        if (freshRideIsCurrent && freshRide?.driver_lat && freshRide?.driver_lng) {
           setDriverLocation({ lat: freshRide.driver_lat, lng: freshRide.driver_lng });
+        } else {
+          setDriverLocation(null);
         }
-        if (freshRide) {
-          setSelectedOrder((current) => {
-            if (!current || current.id !== selectedOrder.id) return current;
-            const nextDriver = {
-              driverId: freshRide.accepted_driver_id || current.driverId,
-              driverName: freshRide.driver_name || current.driverName,
-              driverPhoto: freshRide.driver_photo || current.driverPhoto,
-              driverPlate: freshRide.driver_plate || current.driverPlate,
-              driverRating: freshRide.driver_rating || current.driverRating,
-              driverRequested: true,
-            };
-            if (
-              current.driverId === nextDriver.driverId &&
-              current.driverName === nextDriver.driverName &&
-              current.driverPhoto === nextDriver.driverPhoto &&
-              current.driverPlate === nextDriver.driverPlate &&
-              current.driverRating === nextDriver.driverRating &&
-              current.driverRequested === nextDriver.driverRequested
-            ) return current;
-            return { ...current, ...nextDriver };
-          });
-        }
-        if (freshRide?.driver_status) setDriverStatus(freshRide.driver_status);
+        setDriverStatus(freshRideIsCurrent ? freshRide?.driver_status || null : null);
+        setSelectedOrder((current) => {
+          if (!current || current.id !== selectedOrder.id) return current;
+          const nextDriver = {
+            driverId: freshRideIsCurrent ? freshRide?.accepted_driver_id || undefined : undefined,
+            driverName: freshRideIsCurrent && freshRide?.accepted_driver_id ? freshRide.driver_name || undefined : undefined,
+            driverPhoto: freshRideIsCurrent && freshRide?.accepted_driver_id ? freshRide.driver_photo || undefined : undefined,
+            driverPlate: freshRideIsCurrent && freshRide?.accepted_driver_id ? freshRide.driver_plate || undefined : undefined,
+            driverRating: freshRideIsCurrent && freshRide?.accepted_driver_id && freshRide.driver_rating ? String(freshRide.driver_rating) : undefined,
+            driverRequested: freshRideIsCurrent,
+            driverRequestId: freshRideIsCurrent ? freshRide?.id || null : null,
+            driverStatus: freshRideIsCurrent ? freshRide?.driver_status || null : null,
+            driverMessage: freshRideIsCurrent ? freshRide?.driver_status_message || null : null,
+          };
+          return { ...current, ...nextDriver };
+        });
         const pickupLat = Number(freshRide?.pickup_lat);
         const pickupLng = Number(freshRide?.pickup_lng);
         setRestaurantLocation(
-          freshRide?.pickup_lat != null && freshRide?.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
+          freshRideIsCurrent && freshRide?.pickup_lat != null && freshRide?.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
             ? { lat: pickupLat, lng: pickupLng }
             : null,
         );
@@ -842,57 +835,58 @@ export default function BusinessOrders() {
          */
         const { data: rideReqs } = await supabase
           .from('ride_requests')
-          .select('order_id, driver_status, driver_status_message, driver_name, driver_photo, driver_plate, driver_rating, accepted_driver_id')
-          .in('order_id', orderIds);
+          .select('id, order_id, status, created_at, driver_status, driver_status_message, driver_name, driver_photo, driver_plate, driver_rating, accepted_driver_id')
+          .in('order_id', orderIds)
+          .order('created_at', { ascending: false });
 
-        if (rideReqs) {
-          rideReqs.forEach((rr: any) => {
-            if (!rr.order_id) return;
-            const order = transformedOrders.find((o: any) => o.id === rr.order_id);
-            if (!order) return;
+        // A cancelled assignment remains attached to its old driver so the rider
+        // can see the cancellation. Only the newest live request should drive the
+        // order card; otherwise that historical driver would reappear on refresh.
+        const activeRequestsByOrder = new Map<string, any>();
+        const liveRequestStatuses = new Set(['pending', 'accepted', 'on-the-way', 'in-progress', 'in_progress', 'arrived', 'completed']);
+        (rideReqs || []).forEach((rr: any) => {
+          const requestStatus = String(rr.status || '').trim().toLowerCase().replace(/_/g, '-');
+          if (rr.order_id && liveRequestStatuses.has(requestStatus) && !activeRequestsByOrder.has(rr.order_id)) {
+            activeRequestsByOrder.set(rr.order_id, rr);
+          }
+        });
 
-            // Asked, at least. Whether anyone took it is the next question.
-            order.driverRequested = true;
+        transformedOrders.forEach((order) => {
+          if (order.deliveryMode !== 'delivery') return;
+          const rr = activeRequestsByOrder.get(order.id);
+          // Clear any legacy driver name copied from the order row when the
+          // current request is open or no live request remains.
+          order.driverRequested = Boolean(rr);
+          order.driverRequestId = rr?.id || null;
+          order.driverId = rr?.accepted_driver_id || undefined;
+          order.driverName = rr?.accepted_driver_id ? rr.driver_name || undefined : undefined;
+          order.driverPhoto = rr?.accepted_driver_id ? rr.driver_photo || undefined : undefined;
+          order.driverPlate = rr?.accepted_driver_id ? rr.driver_plate || undefined : undefined;
+          order.driverRating = rr?.accepted_driver_id && rr.driver_rating ? String(rr.driver_rating) : undefined;
+          const priorDriverStatus = order.driverStatus;
+          order.driverStatus = rr?.driver_status || priorDriverStatus || null;
+          order.driverMessage = rr?.driver_status_message || null;
+          if (!rr?.driver_status) return;
 
-            // Store driver info for messaging
-            if (rr.accepted_driver_id) {
-              order.driverId = rr.accepted_driver_id;
-            }
-            if (rr.driver_name) {
-              order.driverName = rr.driver_name;
-            }
-            if (rr.driver_photo) order.driverPhoto = rr.driver_photo;
-            if (rr.driver_plate) order.driverPlate = rr.driver_plate;
-            if (rr.driver_rating) order.driverRating = String(rr.driver_rating);
-
-            if (!rr.driver_status) return;
-            const incomingDriverStatus = String(rr.driver_status).toLowerCase().replace(/_/g, '-');
-            const orderAlreadyRecordsPickup = order.driverStatus === 'picked-up';
-            const rideRequestIsBeforePickup = ['pending', 'assigned', 'accepted', 'on-the-way', 'arrived'].includes(incomingDriverStatus);
-            if (orderAlreadyRecordsPickup && rideRequestIsBeforePickup) return;
-            // Keep the raw rider phase on the order so the progress track can show
-            // it. `status` alone flattens "heading to the shop", "waiting at the
-            // shop", "driving over" and "at the door" into `on-the-way`.
-            order.driverStatus = rr.driver_status;
-            if (rr.driver_status_message) order.driverMessage = rr.driver_status_message;
-
-            // The driver's ride_requests row may lag behind the orders table, or
-            // an order may have been completed from this screen already. Driver
-            // status may only *advance* an in-transit order — it must never
-            // revert a terminal (delivered/cancelled) one.
-            const statusMap: Record<string, Order['status']> = {
-              'on-the-way': 'on-the-way', 'arrived': 'on-the-way',
-              'picked-up': 'on-the-way', 'dropped-off': 'on-the-way',
-              'awaiting-payment': 'on-the-way',
-              'completed': 'delivered',
-            };
-            const mapped = statusMap[rr.driver_status];
-            const isTerminal = order.status === 'delivered' || order.status === 'cancelled';
-            if (mapped && !isTerminal) {
-              order.status = mapped;
-            }
-          });
-        }
+          const incomingDriverStatus = String(rr.driver_status).toLowerCase().replace(/_/g, '-');
+          if (
+            priorDriverStatus === 'picked-up' &&
+            ['pending', 'assigned', 'accepted', 'on-the-way', 'arrived'].includes(incomingDriverStatus)
+          ) {
+            order.driverStatus = priorDriverStatus;
+            return;
+          }
+          order.driverStatus = rr.driver_status;
+          const statusMap: Record<string, Order['status']> = {
+            'on-the-way': 'on-the-way', 'arrived': 'on-the-way',
+            'picked-up': 'on-the-way', 'in-progress': 'on-the-way',
+            'dropped-off': 'on-the-way', 'awaiting-payment': 'on-the-way',
+            'completed': 'delivered',
+          };
+          const mapped = statusMap[incomingDriverStatus];
+          const isTerminal = order.status === 'delivered' || order.status === 'cancelled';
+          if (mapped && !isTerminal) order.status = mapped;
+        });
       }
 
       setOrders(transformedOrders);
@@ -1011,7 +1005,12 @@ export default function BusinessOrders() {
     order.customerName?.toLocaleLowerCase().includes(normalizedOrderSearchQuery);
 
   const filteredActiveOrders = activeOrders
-    .filter((order) => (selectedStatusFilters.length === 0 || selectedStatusFilters.includes(order.status as ActiveOrderStatusFilter)) && matchesOrderSearch(order))
+    .filter((order) => (
+      selectedStatusFilters.length === 0 ||
+      selectedStatusFilters.some((filter) => filter === 'preparing'
+        ? ['preparing', 'ready'].includes(order.status)
+        : order.status === filter)
+    ) && matchesOrderSearch(order))
     .sort(byNewestFirst);
 
   const filteredHistoryOrders = historyOrders.filter(matchesOrderSearch).sort(byNewestFirst);
@@ -1517,6 +1516,107 @@ export default function BusinessOrders() {
     }
   };
 
+  const handleReassignDriver = async () => {
+    const order = selectedOrder;
+    const requestId = order?.driverRequestId;
+    if (!order || !requestId || !order.driverId || isReassigningDriver) return;
+
+    setIsReassigningDriver(true);
+    setIsUpdatingStatus(true);
+    setReassignDriverError(null);
+
+    try {
+      const { data: orderState } = await supabase
+        .from('orders')
+        .select('status')
+        .eq('id', order.id)
+        .maybeSingle();
+      const cancelledAt = new Date().toISOString();
+      const { data: cancelledRequest, error } = await supabase
+        .from('ride_requests')
+        .update({
+          status: 'cancelled',
+          driver_status: 'cancelled',
+          driver_status_message: 'The restaurant reassigned this delivery before arrival.',
+          cancel_reason: 'The restaurant reassigned this delivery before the driver arrived at the restaurant.',
+          cancelled_by: 'business',
+          updated_at: cancelledAt,
+        })
+        .eq('id', requestId)
+        .eq('order_id', order.id)
+        .in('status', ['accepted', 'on-the-way'])
+        .select('id')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!cancelledRequest) {
+        setReassignDriverError('The driver may have reached the restaurant or the assignment changed. Refresh the order and try again.');
+        return;
+      }
+
+      // Clear the old assignment immediately, then post a fresh open request.
+      // The food order stays active and the rider keeps the cancelled history row
+      // long enough to see why their live delivery ended.
+      const persistedStatusValue = String(orderState?.status || '').trim().toLowerCase().replace(/_/g, '-');
+      const persistedStatus = ['pending', 'payment-confirmed', 'confirmed', 'preparing', 'ready', 'on-the-way', 'delivered', 'cancelled'].includes(persistedStatusValue)
+        ? persistedStatusValue as Order['status']
+        : null;
+      const resetStatus: Order['status'] = persistedStatus || (order.status === 'on-the-way' ? 'preparing' : order.status);
+      const resetAssignment = {
+        status: resetStatus,
+        driverId: undefined,
+        driverName: undefined,
+        driverPhoto: undefined,
+        driverPlate: undefined,
+        driverRating: undefined,
+        driverRequestId: null,
+        driverRequested: false,
+        driverStatus: null,
+        driverMessage: null,
+      };
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, ...resetAssignment } : item));
+      setSelectedOrder((current) => current?.id === order.id ? { ...current, ...resetAssignment } : current);
+      setDriverStatus(null);
+      setDriverLocation(null);
+      setRestaurantLocation(null);
+      setRoutePath([]);
+      setEtaToActiveStop(null);
+
+      // Older screens may still read the compatibility fields on `orders`, so
+      // clear them best-effort as well. The ride request remains the source of
+      // truth for the replacement driver.
+      const { error: clearOrderDriverError } = await supabase
+        .from('orders')
+        .update({ driver_name: null, driver_lat: null, driver_lng: null, updated_at: cancelledAt })
+        .eq('id', order.id);
+      if (clearOrderDriverError) {
+        console.warn('[BusinessOrders] Could not clear old driver fields on the order row:', clearOrderDriverError);
+      }
+
+      const reopened = await createOpenDeliveryRequest({ ...order, ...resetAssignment });
+      setShowReassignDriverPrompt(false);
+      if (!reopened) return;
+
+      setOrders((current) => current.map((item) => item.id === order.id
+        ? { ...item, driverRequested: true }
+        : item));
+      setSelectedOrder((current) => current?.id === order.id
+        ? { ...current, driverRequested: true }
+        : current);
+      void supabaseHelpers.notifyBusinessOrderStatusChange({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: 'driver-requested',
+      }).catch((err) => console.error('[BusinessOrders] Failed to message replacement driver request:', err));
+    } catch (error: any) {
+      console.error('[BusinessOrders] Could not reassign delivery driver:', error);
+      setReassignDriverError(error?.message || 'Could not remove this driver. Refresh the order and try again.');
+    } finally {
+      setIsReassigningDriver(false);
+      setIsUpdatingStatus(false);
+    }
+  };
+
   /*
    * One colour per status.
    *
@@ -1546,7 +1646,7 @@ export default function BusinessOrders() {
       case 'preparing':
         return 'bg-[var(--violet)]';
       case 'ready':
-        return 'bg-[var(--teal)]';
+        return 'bg-[var(--violet)]';
       case 'confirmed':
         return 'bg-[var(--primary)]';
       case 'on-the-way':
@@ -1565,16 +1665,14 @@ export default function BusinessOrders() {
       case 'pending':
         return 'New Order';
       case 'payment-confirmed':
-        // Matches the tracker's own wording for this step -- see orderProgress.ts.
-        return 'Paid';
+        return 'Accepted';
       case 'preparing':
         return 'Preparing';
       case 'confirmed':
-        return 'Ready for Delivery';
       case 'ready':
-        return 'Ready for Pickup';
+        return 'Preparing';
       case 'on-the-way':
-        return 'On The Way';
+        return 'Preparing';
       case 'delivered':
         return 'Delivered';
       case 'cancelled':
@@ -1603,7 +1701,15 @@ export default function BusinessOrders() {
   const orderStatusLabel = (order: Order | null) => {
     if (!order) return '';
     if (isFindingRider(order)) return 'Finding Driver';
-    if (order.driverName) return 'Driver Assigned';
+    const progress = getOrderProgress({
+      status: order.status,
+      driverStatus: order.driverStatus,
+      driverAssigned: Boolean(order.driverId || order.driverName),
+      deliveryMode: order.deliveryMode,
+      driverLabel: 'Driver',
+      audience: 'business',
+    });
+    if (progress.currentStepIsRiderStep && progress.riderHasStarted) return progress.currentTitle;
     return getStatusLabel(order.status);
   };
 
@@ -1619,41 +1725,32 @@ export default function BusinessOrders() {
     return getStatusColor(order ? order.status : 'pending');
   };
 
-  /*
-   * The progress track for the open order, built from its status and the rider's
-   * live phase.
-   *
-   * This used to be a private six-step table here with a matching one in the
-   * customer's order screen, and the two disagreed. It also had no rider leg
-   * beyond "Delivering", so a rider stuck at the shop and a rider already at the
-   * customer's door looked identical to the shop owner. The step list and the
-   * mapping now live in `@/lib/orderProgress` and both screens render it.
-   */
+  // Business progress tracks kitchen work, restaurant arrival, and the delivery.
   const progress = selectedOrder
     ? getOrderProgress({
-        /*
-         * While the request is still open, this order is not past "Ready" — there is
-         * no rider. `confirmed` maps to the "Rider Assigned" step, so passing it
-         * through here ticked the rider step off on the strength of the shop pressing
-         * a button, and the shop's own tracker agreed with the badge that a rider was
-         * already on the way. Read it as `ready` until somebody accepts, and the
-         * track moves to "Rider Assigned" when it is actually true.
-         */
-        status: isFindingRider(selectedOrder) ? 'ready' : selectedOrder.status,
+        status: selectedOrder.status,
         driverStatus: driverStatus ?? selectedOrder.driverStatus,
         driverMessage: selectedOrder.driverMessage,
         driverAssigned: Boolean(selectedOrder.driverId || selectedOrder.driverName),
         deliveryMode: selectedOrder.deliveryMode,
         driverLabel: 'Driver',
+        audience: 'business',
       })
     : null;
+  const canReassignAssignedDriver = Boolean(
+    selectedOrder?.deliveryMode === 'delivery' &&
+    selectedOrder.driverRequestId &&
+    selectedOrder.driverId &&
+    !driverHasReachedRestaurant &&
+    !['delivered', 'completed', 'cancelled'].includes(String(selectedOrder.status).toLowerCase().replace(/_/g, '-')),
+  );
+  const assignedDriverName = selectedOrder?.driverName || 'Assigned driver';
 
   const statusFilterOptions: Array<{ value: 'all' | ActiveOrderStatusFilter; label: string }> = [
     { value: 'all', label: `All (${activeOrders.length})` },
     { value: 'pending', label: `Awaiting Payment (${activeOrders.filter(order => order.status === 'pending').length})` },
-    { value: 'payment-confirmed', label: `Paid (${activeOrders.filter(order => order.status === 'payment-confirmed').length})` },
-    { value: 'preparing', label: `Preparing (${activeOrders.filter(order => order.status === 'preparing').length})` },
-    { value: 'ready', label: `Ready (${activeOrders.filter(order => order.status === 'ready').length})` },
+    { value: 'payment-confirmed', label: `Accepted (${activeOrders.filter(order => order.status === 'payment-confirmed').length})` },
+    { value: 'preparing', label: `Preparing (${activeOrders.filter(order => ['preparing', 'ready'].includes(order.status)).length})` },
     { value: 'confirmed', label: `Delivery (${activeOrders.filter(order => order.status === 'confirmed').length})` },
     { value: 'on-the-way', label: `On The Way (${activeOrders.filter(order => order.status === 'on-the-way').length})` },
   ];
@@ -2003,9 +2100,84 @@ export default function BusinessOrders() {
                     status={selectedOrder.status}
                     driverStatus={driverStatus ?? selectedOrder.driverStatus}
                     deliveryMode={selectedOrder.deliveryMode}
-                    showRestaurantArrival
+                    audience="business"
                   />
                 </Card>
+
+                {showActiveDeliveryMap && (
+                  <div className="rounded-xl overflow-hidden border-2 border-[var(--info)]">
+                    {isMapsLoaded && driverLocation ? (
+                      <>
+                        <div className="bg-gradient-to-r from-[var(--info)] to-[var(--info)] px-3 py-2 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
+                            <span className="text-xs font-bold text-white">Live Delivery Tracking</span>
+                          </div>
+                          <Navigation className="w-3.5 h-3.5 text-white/80" />
+                        </div>
+                        <GoogleMap
+                          mapContainerStyle={{ width: '100%', height: '200px' }}
+                          defaultCenter={driverLocation}
+                          defaultZoom={13}
+                          options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'none' }}
+                          onLoad={(map) => {
+                            trackingMapRef.current = map;
+                            const maps = (window as any).google?.maps;
+                            if (maps?.LatLngBounds && activeTrackingDestination) {
+                              const bounds = new maps.LatLngBounds();
+                              bounds.extend(driverLocation);
+                              bounds.extend(activeTrackingDestination);
+                              map.fitBounds(bounds, 28);
+                            }
+                          }}
+                          onUnmount={() => { trackingMapRef.current = null; }}
+                        >
+                          <MapTypeToggle />
+                          <MarkerF
+                            position={driverLocation}
+                            title="Driver"
+                            icon={createTricycleMarkerIcon()}
+                          />
+                          {activeTrackingDestination && (isRiderEnRouteToShop ? (
+                            <MarkerF position={activeTrackingDestination} title="Restaurant" icon={createRestaurantMarkerIcon()} />
+                          ) : (
+                            <MarkerF position={activeTrackingDestination} title="Customer" icon={createDropoffMarkerIcon({ size: 32 })} />
+                          ))}
+                          {routePath.length > 0 && (
+                            <Polyline
+                              path={routePath}
+                              options={{
+                                strokeColor: isRiderEnRouteToShop ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
+                                strokeOpacity: 0.9,
+                                strokeWeight: 4,
+                                geodesic: true,
+                              }}
+                            />
+                          )}
+                        </GoogleMap>
+                        <div className="px-3 py-2 bg-surface border-t border-[var(--border)] flex items-center justify-between">
+                          <span className="text-xs font-semibold text-[var(--ink)]">
+                            {!activeTrackingDestination
+                              ? (isRiderEnRouteToShop ? 'Restaurant location unavailable' : 'Customer location unavailable')
+                              : isDriverAtRestaurant
+                                ? 'Driver arrived at restaurant'
+                                : isRiderEnRouteToShop ? 'Heading to restaurant' : 'Delivering to customer'}
+                          </span>
+                          {etaToActiveStop && (
+                            <span className="text-[10px] font-bold text-[var(--info)] bg-[var(--info-soft)] px-2 py-0.5 rounded-full">
+                              ETA {etaToActiveStop}
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="p-4 text-center">
+                        <p className="text-sm font-semibold text-[var(--ink)]">Waiting for the driver's location…</p>
+                        <p className="text-xs text-[var(--muted-foreground)] mt-1">Live route appears when the driver shares GPS.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Customer Info */}
                 <div>
@@ -2210,7 +2382,7 @@ export default function BusinessOrders() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold text-[var(--ink)]">Food Ordered <span className="text-[var(--error)]">Required</span></p>
-                            <p className="mt-1 text-xs text-[var(--muted-foreground)]">Take a clear photo of the food order. Drivers will see it in the route preview.</p>
+                            <p className="mt-1 text-xs text-[var(--muted-foreground)]">Take a clear photo of the food order.</p>
                           </div>
                           <Button
                             type="button"
@@ -2294,14 +2466,14 @@ export default function BusinessOrders() {
                           </p>
                         </div>
                       </div>
-                    ) : selectedOrder.driverName ? (
+                    ) : (selectedOrder.driverName || selectedOrder.driverId) ? (
                       <div className="rounded-xl border border-[var(--success)] bg-[var(--success-soft)] p-3 md:p-4">
                         <p className="text-[11px] font-bold uppercase tracking-widest text-[var(--success-ink)]">
                           Driver assigned
                         </p>
                         <div className="mt-3 flex min-w-0 items-center gap-3">
                           <div className="relative grid size-14 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--success)]/30 bg-white text-base font-bold text-[var(--success-ink)]">
-                            {selectedOrder.driverName
+                            {assignedDriverName
                               .split(/\s+/)
                               .filter(Boolean)
                               .slice(0, 2)
@@ -2311,14 +2483,14 @@ export default function BusinessOrders() {
                             {selectedOrder.driverPhoto && (
                               <img
                                 src={selectedOrder.driverPhoto}
-                                alt={`${selectedOrder.driverName}'s profile`}
+                                alt={`${assignedDriverName}'s profile`}
                                 className={`absolute inset-0 size-full object-cover ${failedDriverPhotoUrl === selectedOrder.driverPhoto ? 'hidden' : ''}`}
                                 onError={() => setFailedDriverPhotoUrl(selectedOrder.driverPhoto || null)}
                               />
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate font-bold text-[var(--ink)]">{selectedOrder.driverName}</p>
+                            <p className="truncate font-bold text-[var(--ink)]">{assignedDriverName}</p>
                             <p className="mt-0.5 text-xs text-[var(--success-ink)]">
                               {progress?.currentStepIsRiderStep && progress.currentTitle
                                 ? progress.currentTitle
@@ -2345,83 +2517,23 @@ export default function BusinessOrders() {
                             )}
                           </div>
                         )}
+                        {canReassignAssignedDriver && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setReassignDriverError(null);
+                              setShowReassignDriverPrompt(true);
+                            }}
+                            disabled={isReassigningDriver || isUpdatingStatus}
+                            className="mt-3 w-full border-[var(--error)]/40 bg-white text-[var(--error)] hover:bg-[var(--error-soft)]"
+                          >
+                            {isReassigningDriver ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" /> : <XCircle className="mr-2 size-4" aria-hidden="true" />}
+                            {isReassigningDriver ? 'Finding another driver…' : 'Find another driver'}
+                          </Button>
+                        )}
                       </div>
                     ) : null}
-                  </div>
-                )}
-
-                {showActiveDeliveryMap && (
-                  <div className="rounded-xl overflow-hidden border-2 border-[var(--info)]">
-                    {isMapsLoaded && driverLocation ? (
-                      <>
-                        <div className="bg-gradient-to-r from-[var(--info)] to-[var(--info)] px-3 py-2 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
-                            <span className="text-xs font-bold text-white">Live Delivery Tracking</span>
-                          </div>
-                          <Navigation className="w-3.5 h-3.5 text-white/80" />
-                        </div>
-                        <GoogleMap
-                          mapContainerStyle={{ width: '100%', height: '200px' }}
-                          defaultCenter={driverLocation}
-                          defaultZoom={13}
-                          options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'none' }}
-                          onLoad={(map) => {
-                            trackingMapRef.current = map;
-                            const maps = (window as any).google?.maps;
-                            if (maps?.LatLngBounds && activeTrackingDestination) {
-                              const bounds = new maps.LatLngBounds();
-                              bounds.extend(driverLocation);
-                              bounds.extend(activeTrackingDestination);
-                              map.fitBounds(bounds, 28);
-                            }
-                          }}
-                          onUnmount={() => { trackingMapRef.current = null; }}
-                        >
-                          <MapTypeToggle />
-                          <MarkerF
-                            position={driverLocation}
-                            title="Driver"
-                            icon={createTricycleMarkerIcon()}
-                          />
-                          {activeTrackingDestination && (isRiderEnRouteToShop ? (
-                            <MarkerF position={activeTrackingDestination} title="Restaurant" icon={createRestaurantMarkerIcon()} />
-                          ) : (
-                            <MarkerF position={activeTrackingDestination} title="Customer" icon={createDropoffMarkerIcon({ size: 32 })} />
-                          ))}
-                          {routePath.length > 0 && (
-                            <Polyline
-                              path={routePath}
-                              options={{
-                                strokeColor: isRiderEnRouteToShop ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
-                                strokeOpacity: 0.9,
-                                strokeWeight: 4,
-                                geodesic: true,
-                              }}
-                            />
-                          )}
-                        </GoogleMap>
-                        <div className="px-3 py-2 bg-surface border-t border-[var(--border)] flex items-center justify-between">
-                          <span className="text-xs font-semibold text-[var(--ink)]">
-                            {!activeTrackingDestination
-                              ? (isRiderEnRouteToShop ? 'Restaurant location unavailable' : 'Customer location unavailable')
-                              : isDriverAtRestaurant
-                                ? 'Driver arrived at restaurant'
-                                : isRiderEnRouteToShop ? 'Heading to restaurant' : 'Delivering to customer'}
-                          </span>
-                          {etaToActiveStop && (
-                            <span className="text-[10px] font-bold text-[var(--info)] bg-[var(--info-soft)] px-2 py-0.5 rounded-full">
-                              ETA {etaToActiveStop}
-                            </span>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="p-4 text-center">
-                        <p className="text-sm font-semibold text-[var(--ink)]">Waiting for the driver's location…</p>
-                        <p className="text-xs text-[var(--muted-foreground)] mt-1">Live route appears when the driver shares GPS.</p>
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -2436,7 +2548,7 @@ export default function BusinessOrders() {
                       )}
                       {!progress?.riderMessage && progress?.currentStep && (
                         <p className="text-xs text-[var(--amber-ink)] mt-1">
-                          {progress.currentStep.key === 'picked-up'
+                          {progress.currentStep.key === 'out-for-delivery'
                             ? 'The driver has collected the order and is on the way to the customer.'
                             : progress.currentStep.description}
                         </p>
@@ -2577,6 +2689,55 @@ export default function BusinessOrders() {
                 className="flex-1 font-bold bg-[var(--success)] hover:bg-[var(--success)] disabled:opacity-50"
               >
                 Accept Order
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReassignDriverPrompt && selectedOrder && (
+        <div className="fixed inset-0 z-[3200] flex items-center justify-center bg-black/60 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reassign-driver-title"
+            className="w-full max-w-sm rounded-3xl bg-surface p-6 text-center shadow-2xl"
+          >
+            <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-[var(--error-soft)] text-[var(--error)]">
+              <Bike className="size-7" aria-hidden="true" />
+            </div>
+            <h2 id="reassign-driver-title" className="text-xl font-extrabold text-[var(--ink)]">
+              Find another driver?
+            </h2>
+            <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+              {selectedOrder.driverName} will be removed from this delivery, and the order will be offered to nearby drivers again. The customer’s order stays active. You can do this only before the driver reaches the restaurant.
+            </p>
+            {reassignDriverError && (
+              <p role="alert" className="mt-3 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-left text-xs font-semibold text-[var(--error)]">
+                {reassignDriverError}
+              </p>
+            )}
+            <div className="mt-5 flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowReassignDriverPrompt(false);
+                  setReassignDriverError(null);
+                }}
+                disabled={isReassigningDriver}
+                className="flex-1"
+              >
+                Keep driver
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleReassignDriver()}
+                disabled={isReassigningDriver || isUpdatingStatus}
+                className="flex-1 bg-[var(--error)] font-bold text-white hover:bg-[var(--error)] disabled:opacity-50"
+              >
+                {isReassigningDriver ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" /> : null}
+                {isReassigningDriver ? 'Reassigning…' : 'Find another driver'}
               </Button>
             </div>
           </div>

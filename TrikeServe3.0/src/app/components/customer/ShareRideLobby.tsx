@@ -21,7 +21,7 @@ import RideChatOverlay from "../rider/RideChatOverlay";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR } from "@/lib/rideMapColors";
 import { DEFAULT_TERMINAL_COLOR, normalizeRouteColor, normalizeTerminalColor, terminalMarkerIcon, TerminalIconGlyph } from "../ui/TerminalIcon";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
-import { useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { useDevModeActiveFeature, useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "../../../lib/rideLock";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes } from "@/lib/terminalRoutes";
 import { Tricycle } from "../ui/Tricycle";
@@ -437,6 +437,7 @@ export default function ShareRideLobby({
     ? Math.floor(maxPassengersAllowed)
     : DEFAULT_MAX_PASSENGERS;
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
+  const allowRideBookingOutsideTerminal = useDevModeActiveFeature("allowRideBookingOutsideTerminal");
   const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
   const [openingChat, setOpeningChat] = useState(false);
   /**
@@ -1648,17 +1649,19 @@ export default function ShareRideLobby({
       }
 
       if (enforceBoundary) {
-        const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
-        if (border.lookupFailed) {
-          setGateFailure('lookup');
-          setShowOutOfBoundaryPopup(true);
-          return null;
-        }
-        if (!border.allowed) {
-          console.log('🚫 Share ride pickup outside every terminal border:', pickupCoords);
-          setGateFailure('border');
-          setShowOutOfBoundaryPopup(true);
-          return null;
+        if (!allowRideBookingOutsideTerminal) {
+          const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
+          if (border.lookupFailed) {
+            setGateFailure('lookup');
+            setShowOutOfBoundaryPopup(true);
+            return null;
+          }
+          if (!border.allowed) {
+            console.log('🚫 Share ride pickup outside every terminal border:', pickupCoords);
+            setGateFailure('border');
+            setShowOutOfBoundaryPopup(true);
+            return null;
+          }
         }
 
         // Validate against the exact selected route geometry used by the

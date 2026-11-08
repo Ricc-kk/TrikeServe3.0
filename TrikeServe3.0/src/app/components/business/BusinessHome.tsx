@@ -13,7 +13,7 @@ import BusinessMapSelector from "./BusinessMapSelector";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
-import { cuisineLabels, isCuisineId } from "@/lib/foodTaxonomy";
+import { isCuisineId } from "@/lib/foodTaxonomy";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
 import {
   DAY_LABELS,
@@ -1047,14 +1047,10 @@ const forcedOpen = isForcedOpen({ force_open_until: forceOpenUntil }, now);
 const closedByHours = isStoreOpen && !forcedOpen && !storeState.open;
 const shownOpen = storeState.open;
 
-/**
- * What the shop says it serves, as one line for the summary card.
- *
- * Labels come from the taxonomy in its own order rather than the order they were
- * ticked, so two shops that both sell "Noodles, Filipino" read identically
- * instead of one of them appearing to have a different set.
- */
-const cuisineSummary = cuisineLabels(restaurantData.cuisine).join(", ");
+/** Categories in the shop summary stay in sync with the sections managed in Products. */
+const productCategorySummary = [...new Set(
+  sections.map((section) => section.name.trim()).filter(Boolean),
+)].join(", ");
 
 const storeInfoSummary: Array<{
   label: string;
@@ -1070,11 +1066,11 @@ const storeInfoSummary: Array<{
   { label: "Phone", Icon: Phone, value: user?.phone || "Not set" },
   { label: "Delivery time", Icon: Clock, value: restaurantData.deliveryTime },
   {
-    label: "What we serve",
+    label: "Product Categories",
     Icon: UtensilsCrossed,
-    value: cuisineSummary || "Not set",
-    note: cuisineSummary ? undefined : "Customers filter shops by this",
-    tone: cuisineSummary ? undefined : "text-[var(--muted-foreground)]",
+    value: productCategorySummary || "Not set",
+    note: productCategorySummary ? undefined : "Add categories in Products",
+    tone: productCategorySummary ? undefined : "text-[var(--muted-foreground)]",
   },
   {
     label: "Opening hours",

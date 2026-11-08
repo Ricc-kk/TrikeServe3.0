@@ -97,6 +97,7 @@ export default function DevModeSettings() {
   const [driverQueueJoiningEnabled, setDriverQueueJoiningEnabled] = useDevModeFeature("driverQueueJoining");
   const [driverFoodDeliveryEnabled, setDriverFoodDeliveryEnabled] = useDevModeFeature("driverFoodDelivery");
   const [customerDeliveryAnywhereEnabled, setCustomerDeliveryAnywhereEnabled] = useDevModeFeature("customerDeliveryAnywhere");
+  const [allowRideBookingOutsideTerminal, setAllowRideBookingOutsideTerminal] = useDevModeFeature("allowRideBookingOutsideTerminal");
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<FloatingPosition>(getInitialFloatingPosition);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -316,6 +317,15 @@ export default function DevModeSettings() {
               onCheckedChange={setCustomerDeliveryAnywhereEnabled}
               disabled={!isEnabled}
               icon={MapPin}
+            />
+            <SettingRow
+              id="dev-mode-allow-ride-booking-outside-terminal"
+              title="Allow rides outside terminal"
+              description="Let customers book Share Ride and Private Ride from outside a terminal border while Dev Mode is on."
+              checked={allowRideBookingOutsideTerminal}
+              onCheckedChange={setAllowRideBookingOutsideTerminal}
+              disabled={!isEnabled}
+              icon={CarTaxiFront}
             />
             <SettingRow
               id="dev-mode-enforce-boundary"

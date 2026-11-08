@@ -2139,6 +2139,9 @@ export const supabaseHelpers = {
         updated_at: timestamp
       })
       .eq('id', rideId)
+      // A stale driver screen must not turn a business-cancelled assignment back
+      // into an apparently live delivery while it is waiting to redirect.
+      .neq('status', 'cancelled')
       .select()
       .single();
 
@@ -2150,6 +2153,7 @@ export const supabaseHelpers = {
       .from('ride_requests')
       .update(updates)
       .eq('id', rideId)
+      .neq('status', 'cancelled')
       .select()
       .single();
     return { data, error };
@@ -2823,12 +2827,11 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
-  // Complete a shared ride: close the lobby AND record it as a completed
-  // ride_requests row so it appears in the driver's recent trips/earnings
-  // (queried by driver_id + status='completed') and in the host customer's
-  // activity log (queried by customer_id + status='completed').
+  // Complete a shared ride: close the lobby and record a completed ride for
+  // each real customer account so every passenger can see it in Activity.
   async completeSharedRide(lobbyId: string, details: {
     customerId?: string;
+    passengerDetails?: any[];
     driverId?: string;
     driverName?: string;
     driverRating?: string;
@@ -2849,39 +2852,118 @@ export const supabaseHelpers = {
     // 1) Close the lobby so it stops showing as active for everyone.
     const lobbyResult = await this.completeLobbyRide(lobbyId);
 
-    // 2) Record the completed shared ride in ride_requests. ride_requests
-    //    requires a customer_id (NOT NULL + FK), so skip the insert when we
-    //    don't have one and just close the lobby.
-    if (!details.customerId) {
-      console.warn('[supabaseHelpers.completeSharedRide] No customer id — lobby closed but ride not recorded.');
+    // Use the persisted lobby roster when available; it includes passengers who
+    // joined after the host created the ride. The active ride roster is a
+    // fallback in case the lobby update did not return its row.
+    const parsePassengers = (value: unknown): any[] => {
+      if (Array.isArray(value)) return value;
+      if (typeof value !== 'string') return [];
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+    const lobbyPassengers = parsePassengers(lobbyResult?.data?.passengers_json);
+    const ridePassengers = parsePassengers(details.passengerDetails);
+    const passengerRoster = lobbyPassengers.length > 0 ? lobbyPassengers : ridePassengers;
+    const accountIdForPassenger = (id: unknown) => String(id ?? '').trim().replace(/_companion_\d+$/i, '');
+    const customerIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const seatsByCustomer = new Map<string, any[]>();
+    const seenPassengerIds = new Set<string>();
+
+    passengerRoster.forEach((passenger) => {
+      const passengerId = String(passenger?.id ?? '').trim();
+      const accountId = accountIdForPassenger(passengerId);
+      if (!passengerId || !customerIdPattern.test(accountId) || seenPassengerIds.has(passengerId)) return;
+      seenPassengerIds.add(passengerId);
+      const normalizedAccountId = accountId.toLowerCase();
+      const seats = seatsByCustomer.get(normalizedAccountId) || [];
+      seats.push(passenger);
+      seatsByCustomer.set(normalizedAccountId, seats);
+    });
+
+    // Older lobbies can lack a passenger roster. Retain the previous behavior
+    // for the host in that case, and use the host as a fallback if their seat
+    // was omitted from an otherwise populated roster.
+    const fallbackCustomerId = accountIdForPassenger(details.customerId);
+    if (customerIdPattern.test(fallbackCustomerId)) {
+      const normalizedFallbackId = fallbackCustomerId.toLowerCase();
+      if (!seatsByCustomer.has(normalizedFallbackId)) seatsByCustomer.set(normalizedFallbackId, []);
+    }
+
+    if (seatsByCustomer.size === 0) {
+      console.warn('[supabaseHelpers.completeSharedRide] No customer ids — lobby closed but ride not recorded.');
       return { lobby: lobbyResult, ride: { data: null, error: null } };
     }
 
-    const rideResult = await supabase
-      .from('ride_requests')
-      .insert([{
-        customer_id: details.customerId,
+    // A group's individual seat fares are stored in passengers_json. For old
+    // rows without fares, distribute the lobby total over the missing seats so
+    // the customer-specific records do not each receive the whole lobby fare.
+    const allSeats = Array.from(seatsByCustomer.values()).flat();
+    const hasPassengerRoster = allSeats.length > 0;
+    const parseFareCents = (value: unknown): number | null => {
+      if (value == null || value === '') return null;
+      const fare = Number(value);
+      return Number.isFinite(fare) && fare >= 0 ? Math.round(fare * 100) : null;
+    };
+    const knownFareCents = allSeats.reduce((total, passenger) => total + (parseFareCents(passenger?.fare) ?? 0), 0);
+    const missingFareCount = allSeats.filter((passenger) => parseFareCents(passenger?.fare) == null).length;
+    const detailsAmount = Number(details.amount);
+    const lobbyAmount = Number(lobbyResult?.data?.price_per_seat);
+    const fallbackAmountCents = Math.round(
+      (Number.isFinite(detailsAmount) && detailsAmount > 0
+        ? detailsAmount
+        : Number.isFinite(lobbyAmount) && lobbyAmount > 0 ? lobbyAmount : 0) * 100,
+    );
+    let remainingFallbackCents = Math.max(0, fallbackAmountCents - knownFareCents);
+    let remainingMissingSeats = missingFareCount;
+    const passengerFareCents = new Map<any, number>();
+    allSeats.forEach((passenger) => {
+      const knownFare = parseFareCents(passenger?.fare);
+      if (knownFare != null) {
+        passengerFareCents.set(passenger, knownFare);
+        return;
+      }
+      const allocatedFare = remainingMissingSeats > 0 ? Math.floor(remainingFallbackCents / remainingMissingSeats) : 0;
+      passengerFareCents.set(passenger, allocatedFare);
+      remainingFallbackCents -= allocatedFare;
+      remainingMissingSeats = Math.max(0, remainingMissingSeats - 1);
+    });
+
+    const lobby = lobbyResult?.data;
+    const rideRows = Array.from(seatsByCustomer.entries()).map(([customerId, seats]) => {
+      const primarySeat = seats.find((passenger) => String(passenger?.id ?? '').trim().toLowerCase() === customerId) || seats[0];
+      const seatFareCents = seats.reduce((total, passenger) => total + (passengerFareCents.get(passenger) || 0), 0);
+      const fallbackSeatCount = hasPassengerRoster ? 1 : Math.max(1, Number(details.passengerCount) || 1);
+      return {
+        customer_id: customerId,
         driver_id: details.driverId || null,
-        pickup_location: details.pickup,
-        dropoff_location: details.dropoff,
-        pickup_address: details.pickupAddress || null,
-        dropoff_address: details.dropoffAddress || null,
-        pickup_lat: details.pickupLat ?? null,
-        pickup_lng: details.pickupLng ?? null,
-        dropoff_lat: details.dropoffLat ?? null,
-        dropoff_lng: details.dropoffLng ?? null,
+        pickup_location: primarySeat?.pickup || details.pickup,
+        dropoff_location: primarySeat?.dropoff || details.dropoff,
+        pickup_address: primarySeat?.pickupAddress || details.pickupAddress || null,
+        dropoff_address: primarySeat?.dropoffAddress || details.dropoffAddress || null,
+        pickup_lat: primarySeat?.pickupLat ?? details.pickupLat ?? lobby?.pickup_lat ?? null,
+        pickup_lng: primarySeat?.pickupLng ?? details.pickupLng ?? lobby?.pickup_lng ?? null,
+        dropoff_lat: primarySeat?.dropoffLat ?? details.dropoffLat ?? null,
+        dropoff_lng: primarySeat?.dropoffLng ?? details.dropoffLng ?? null,
         status: 'completed',
         ride_type: 'share',
         payment_method: details.paymentMethod || 'GCASH',
-        amount: details.amount,
-        passenger_count: details.passengerCount || 1,
+        amount: seats.length > 0 ? seatFareCents / 100 : hasPassengerRoster ? 0 : fallbackAmountCents / 100,
+        passenger_count: seats.length > 0 ? seats.length : fallbackSeatCount,
         driver_name: details.driverName || null,
         driver_rating: details.driverRating || '4.8',
         created_at: timestamp,
         updated_at: timestamp,
-      }])
-      .select()
-      .single();
+      };
+    });
+
+    const rideResult = await supabase
+      .from('ride_requests')
+      .insert(rideRows)
+      .select();
 
     return { lobby: lobbyResult, ride: rideResult };
   },
@@ -3078,7 +3160,7 @@ export const supabaseHelpers = {
       },
       'dropped-off': {
         title: 'Arrived at your location',
-        message: 'Your driver has arrived at your delivery address.',
+        message: message || 'Your driver has arrived at your delivery address.',
         emoji: '🏁',
       },
       'awaiting-payment': {
@@ -3163,7 +3245,7 @@ export const supabaseHelpers = {
         'on-the-way': "I'm on my way to pick up your order.",
         arrived: "I've arrived at the restaurant to pick up your order.",
         'picked-up': "I've picked up your order and I'm heading to you!",
-        'dropped-off': "I've arrived at your delivery address.",
+        'dropped-off': message || "I've arrived at your delivery address.",
         'awaiting-payment': "I'm almost there — please prepare your payment.",
         completed: "I've completed your delivery. Enjoy your meal!",
         cancelled: "I've cancelled this delivery.",

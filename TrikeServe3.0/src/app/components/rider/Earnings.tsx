@@ -20,6 +20,7 @@ interface TripHistoryItem {
   customerName?: string;
   pickup?: string;
   dropoff?: string;
+  dropoffs?: string[];
 }
 
 export default function Earnings() {
@@ -117,6 +118,44 @@ export default function Earnings() {
         });
         const uniqueRides = Array.from(ridesById.values());
 
+        // Shared rides now have one customer-facing ride_requests row per
+        // account. Those rows share driver_id and created_at, so collapse the
+        // set back into one trip for driver earnings and trip counts.
+        const ridesForDriver: any[] = [];
+        const sharedRideRows = new Map<string, any>();
+        uniqueRides.forEach((ride: any) => {
+          const rideType = String(ride.ride_type || ride.type || '').toLowerCase();
+          const rideStatus = String(ride.status || '').toLowerCase();
+          const driverId = String(ride.driver_id || ride.accepted_driver_id || '');
+          const createdAt = String(ride.created_at || '');
+          if (!['share', 'shared'].includes(rideType) || rideStatus !== 'completed' || !driverId || !createdAt) {
+            ridesForDriver.push(ride);
+            return;
+          }
+
+          const sharedRideKey = `${driverId}:${createdAt}`;
+          const existingRide = sharedRideRows.get(sharedRideKey);
+          if (existingRide) {
+            existingRide.amount = Math.round(((Number(existingRide.amount) || 0) + (Number(ride.amount) || 0)) * 100) / 100;
+            existingRide.passenger_count = (Number(existingRide.passenger_count) || 0) + (Number(ride.passenger_count) || 0);
+            const dropoff = String(ride.dropoff_location || '').trim();
+            const dropoffKey = dropoff.toLowerCase();
+            const dropoffs: string[] = Array.isArray(existingRide.dropoff_locations)
+              ? existingRide.dropoff_locations
+              : [existingRide.dropoff_location].filter(Boolean);
+            if (dropoff && !dropoffs.some((destination) => String(destination).trim().toLowerCase() === dropoffKey)) {
+              dropoffs.push(dropoff);
+            }
+            existingRide.dropoff_locations = dropoffs;
+            return;
+          }
+
+          const initialDropoff = String(ride.dropoff_location || '').trim();
+          const combinedRide = { ...ride, dropoff_locations: initialDropoff ? [initialDropoff] : [] };
+          sharedRideRows.set(sharedRideKey, combinedRide);
+          ridesForDriver.push(combinedRide);
+        });
+
         // Convert delivery orders to trip format
         const deliveryTrips = dbOrders.map((order: any) => ({
           id: order.id,
@@ -133,7 +172,7 @@ export default function Earnings() {
         }));
 
         // Merge and deduplicate
-        const allTrips = [...uniqueRides, ...deliveryTrips];
+        const allTrips = [...ridesForDriver, ...deliveryTrips];
         const dedupedTrips = Array.from(new Map(allTrips.map(t => [t.id, t])).values());
 
         // Format rides for display
@@ -165,6 +204,11 @@ export default function Earnings() {
             // Parse pickup/dropoff locations
             const rawPickup = ride.pickup_location || '';
             const rawDropoff = ride.dropoff_location || '';
+            const dropoffs: string[] = Array.from(new Set<string>(
+              (Array.isArray(ride.dropoff_locations) ? ride.dropoff_locations : [rawDropoff])
+                .map((destination: unknown) => String(destination || '').trim())
+                .filter(Boolean),
+            ));
             let pickup = rawPickup.startsWith('DELIVERY|') ? rawPickup.split('|').pop() || 'Restaurant' : rawPickup;
             let dropoff = rawDropoff;
             // For delivery orders, try to get restaurant name from the tag
@@ -185,7 +229,8 @@ export default function Earnings() {
               payment: (isDelivery || (ride.payment_method || ride.payment) === 'COD' ? 'Cash' : 'Prepaid') as 'Cash' | 'Prepaid',
               customerName: ride.customer_name || ride.customerName || 'Customer',
               pickup: pickup || 'Pickup',
-              dropoff: dropoff || 'Drop-off',
+              dropoff: dropoff || dropoffs[0] || 'Drop-off',
+              dropoffs,
             };
           })
           .sort((a, b) => {
@@ -564,12 +609,16 @@ export default function Earnings() {
                     )}
 
                     {/* Pickup & Dropoff with vertical connector */}
-                    {(trip.pickup || trip.dropoff) && (
+                    {(trip.pickup || trip.dropoffs?.length || trip.dropoff) && (
                       <div className="flex items-stretch gap-2 mt-1">
                         <div className="flex flex-col items-center pt-1">
-                          <div className="w-2.5 h-2.5 rounded-full bg-[var(--success)] shrink-0" />
-                          <div className="w-0.5 flex-1 bg-[var(--border)] my-0.5" />
-                          <div className="w-2.5 h-2.5 rounded-full bg-[var(--primary)] shrink-0" />
+                          {trip.pickup && <div className="w-2.5 h-2.5 rounded-full bg-[var(--success)] shrink-0" />}
+                          {(trip.dropoffs?.length ? trip.dropoffs : trip.dropoff ? [trip.dropoff] : []).map((_, index) => (
+                            <div key={`dropoff-marker-${index}`} className="flex flex-col items-center">
+                              {(trip.pickup || index > 0) && <div className="w-0.5 h-3 bg-[var(--border)]" />}
+                              <div className="w-2.5 h-2.5 rounded-full bg-[var(--primary)] shrink-0" />
+                            </div>
+                          ))}
                         </div>
                         <div className="flex-1 space-y-2 min-w-0">
                           {trip.pickup && (
@@ -578,12 +627,14 @@ export default function Earnings() {
                               <p className="text-xs text-[var(--ink)] truncate">{trip.pickup}</p>
                             </div>
                           )}
-                          {trip.dropoff && (
-                            <div>
-                              <p className="text-[10px] text-[var(--primary)] font-bold">Drop-off</p>
-                              <p className="text-xs text-[var(--ink)] truncate">{trip.dropoff}</p>
+                          {(trip.dropoffs?.length ? trip.dropoffs : trip.dropoff ? [trip.dropoff] : []).map((dropoff, index, dropoffs) => (
+                            <div key={`dropoff-${index}`}>
+                              <p className="text-[10px] text-[var(--primary)] font-bold">
+                                {dropoffs.length > 1 ? `Drop-off ${index + 1}` : 'Drop-off'}
+                              </p>
+                              <p className="text-xs text-[var(--ink)] whitespace-normal break-words">{dropoff}</p>
                             </div>
-                          )}
+                          ))}
                         </div>
                       </div>
                     )}

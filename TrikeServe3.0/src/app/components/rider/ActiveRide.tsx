@@ -1180,9 +1180,22 @@ export default function ActiveRide() {
     if (ride.lobbyId) {
       supabaseHelpers.updateLobbyDriverLocation(ride.lobbyId, loc.lat, loc.lng);
     } else if (ride.orderId) {
-      // Delivery: keep both the order row and the active ride in sync.
-      supabase.from('orders').update({ driver_lat: loc.lat, driver_lng: loc.lng, driver_name: ride.driverName || 'Driver', updated_at: new Date().toISOString() }).eq('id', ride.orderId).then(() => {}, () => {});
-      if (ride.id) supabaseHelpers.updateRideRequest(ride.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
+      // Keep both rows in sync only while the delivery request is still live.
+      // This stops an old driver screen from continuing to publish the cancelled
+      // assignment while it is waiting to redirect back to available deliveries.
+      if (ride.id) {
+        supabaseHelpers.updateRideRequest(ride.id, {
+          driver_lat: loc.lat,
+          driver_lng: loc.lng,
+          updated_at: new Date().toISOString(),
+        }).then(({ data, error }) => {
+          if (error || !data) return;
+          return supabase
+            .from('orders')
+            .update({ driver_lat: loc.lat, driver_lng: loc.lng, driver_name: ride.driverName || 'Driver', updated_at: new Date().toISOString() })
+            .eq('id', ride.orderId);
+        }).catch(() => {});
+      }
     } else if (ride.id) {
       supabaseHelpers.updateRideRequest(ride.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
     } else {
@@ -2015,11 +2028,15 @@ export default function ActiveRide() {
     setRideData(updated);
     writeRiderActiveRide(updated);
     const dbMap: Record<RideStatus, string> = { 'on-the-way': 'on-the-way', 'arrived': 'arrived', 'pickup': 'picked-up', 'drop-off': 'dropped-off', 'payment': 'awaiting-payment' };
+    const deliveryFeeAmount = Number(rideData.amount);
+    const deliveryArrivalMessage = Number.isFinite(deliveryFeeAmount)
+      ? `I've arrived at your delivery address. Please prepare ₱${deliveryFeeAmount.toFixed(2)} in cash for the delivery fee.`
+      : "I've arrived at your delivery address. Please prepare the delivery fee in cash.";
     const messageMap: Record<RideStatus, string> = {
       'on-the-way': 'Driver is on the way!',
       'arrived': 'Driver has arrived!',
       'pickup': isDeliveryRide(rideData) ? 'Driver picked up the order!' : 'Passengers picked up!',
-      'drop-off': 'Arrived at drop-off!',
+      'drop-off': isDeliveryRide(rideData) ? deliveryArrivalMessage : 'Arrived at drop-off!',
       'payment': 'Please complete the payment.',
     };
     const waitsForPassengerDropoff = Boolean(
@@ -2200,6 +2217,7 @@ export default function ActiveRide() {
       // in the driver's recent trips/earnings and the customer's activity log.
       const { lobby, ride } = await supabaseHelpers.completeSharedRide(rideData.lobbyId, {
         customerId: rideData.customerId || rideData.passengerDetails?.[0]?.id,
+        passengerDetails: rideData.passengerDetails,
         driverId: user?.id,
         driverName: user?.name,
         driverRating: '4.8',
@@ -2265,6 +2283,7 @@ export default function ActiveRide() {
         : 'private ride';
     const cancellationMessage = `The driver cancelled this ${serviceLabel}. Reason: ${reason}`;
     let orderUpdateWarning: string | null = null;
+    let deliveryReturnedToSearch = false;
 
     try {
       if (rideData.lobbyId) {
@@ -2287,7 +2306,7 @@ export default function ActiveRide() {
       } else {
         const { data: currentRide, error: lookupError } = await supabase
           .from('ride_requests')
-          .select('driver_id, accepted_driver_id, status, order_id, pickup_location')
+          .select('driver_id, accepted_driver_id, status, order_id, pickup_location, driver_status')
           .eq('id', rideData.id)
           .maybeSingle();
 
@@ -2306,63 +2325,89 @@ export default function ActiveRide() {
           throw new Error('This ride is no longer assigned to you.');
         }
 
-        const { data, error } = await supabase
-          .from('ride_requests')
-          .update({
-            status: 'cancelled',
-            driver_status: 'cancelled',
-            driver_status_message: cancellationMessage,
-            cancel_reason: reason,
-            cancelled_by: 'driver',
-            updated_at: cancelledAt,
-          })
-          .eq('id', rideData.id)
-          .eq(assignedDriverColumn, user.id)
-          .neq('status', 'completed')
-          .neq('status', 'cancelled')
-          .select('id')
-          .maybeSingle();
+        const normalizedRequestStatus = String(currentRide.status || '').trim().toLowerCase().replace(/_/g, '-');
+        const normalizedDriverStatus = String(currentRide.driver_status || '').trim().toLowerCase().replace(/_/g, '-');
+        const deliveryHasLeftRestaurant = isDelivery && (
+          ['pickup', 'drop-off', 'payment'].includes(rideData.status)
+          || ['in-progress', 'picked-up', 'dropped-off', 'awaiting-payment', 'completed'].includes(normalizedDriverStatus)
+          || ['in-progress', 'completed'].includes(normalizedRequestStatus)
+        );
+        const deliveryCanReturnToSearch = isDelivery
+          && !deliveryHasLeftRestaurant
+          && Boolean(currentRide.order_id);
 
-        if (error) throw error;
-        if (!data) throw new Error('This ride is no longer active. Refresh the page and try again.');
+        if (deliveryCanReturnToSearch) {
+          // Reset the same request to the open queue. Keeping the order row active
+          // lets both customer and business screens immediately show Finding Driver.
+          // The database function checks assignment and pickup state atomically.
+          const { data: reopenedRequest, error: reopenError } = await supabase.rpc(
+            'reopen_delivery_request_after_driver_cancellation',
+            { p_ride_request_id: rideData.id },
+          );
+          if (reopenError) throw reopenError;
+          if (!reopenedRequest) {
+            throw new Error('This delivery is no longer available for reassignment. Refresh and try again.');
+          }
+          deliveryReturnedToSearch = true;
+        } else {
+          const { data, error } = await supabase
+            .from('ride_requests')
+            .update({
+              status: 'cancelled',
+              driver_status: 'cancelled',
+              driver_status_message: cancellationMessage,
+              cancel_reason: reason,
+              cancelled_by: 'driver',
+              updated_at: cancelledAt,
+            })
+            .eq('id', rideData.id)
+            .eq(assignedDriverColumn, user.id)
+            .neq('status', 'completed')
+            .neq('status', 'cancelled')
+            .select('id')
+            .maybeSingle();
 
-        if (isDelivery) {
-          const orderId = currentRide.order_id
-            || rideData.orderId
-            || supabaseHelpers.parseOrderIdFromDeliveryPickup(currentRide.pickup_location || rideData.pickup);
-          const orderUpdate = {
-            status: 'cancelled',
-            cancel_reason: reason,
-            cancelled_by: 'driver',
-            updated_at: cancelledAt,
-          };
+          if (error) throw error;
+          if (!data) throw new Error('This ride is no longer active. Refresh the page and try again.');
 
-          const orderResult = orderId
-            ? await supabase
-              .from('orders')
-              .update(orderUpdate)
-              .eq('id', orderId)
-              .neq('status', 'delivered')
-              .select('id')
-              .maybeSingle()
-            : rideData.orderNumber
+          if (isDelivery) {
+            const orderId = currentRide.order_id
+              || rideData.orderId
+              || supabaseHelpers.parseOrderIdFromDeliveryPickup(currentRide.pickup_location || rideData.pickup);
+            const orderUpdate = {
+              status: 'cancelled',
+              cancel_reason: reason,
+              cancelled_by: 'driver',
+              updated_at: cancelledAt,
+            };
+
+            const orderResult = orderId
               ? await supabase
                 .from('orders')
                 .update(orderUpdate)
-                .eq('order_number', rideData.orderNumber)
+                .eq('id', orderId)
                 .neq('status', 'delivered')
                 .select('id')
                 .maybeSingle()
-              : null;
+              : rideData.orderNumber
+                ? await supabase
+                  .from('orders')
+                  .update(orderUpdate)
+                  .eq('order_number', rideData.orderNumber)
+                  .neq('status', 'delivered')
+                  .select('id')
+                  .maybeSingle()
+                : null;
 
-          if (!orderResult) {
-            orderUpdateWarning = 'The delivery was cancelled, but its food order could not be identified.';
-          } else if (orderResult.error || !orderResult.data) {
-            console.error('[ActiveRide] Could not cancel the linked food order:', orderResult.error);
-            orderUpdateWarning = 'The delivery was cancelled, but the food order status could not be updated. Please contact the restaurant.';
+            if (!orderResult) {
+              orderUpdateWarning = 'The delivery was cancelled, but its food order could not be identified.';
+            } else if (orderResult.error || !orderResult.data) {
+              console.error('[ActiveRide] Could not cancel the linked food order:', orderResult.error);
+              orderUpdateWarning = 'The delivery was cancelled, but the food order status could not be updated. Please contact the restaurant.';
+            }
+
+            notifyDeliveryStatus(rideData, 'cancelled', cancellationMessage);
           }
-
-          notifyDeliveryStatus(rideData, 'cancelled', cancellationMessage);
         }
       }
 
@@ -2375,8 +2420,8 @@ export default function ActiveRide() {
         actorRole: 'rider',
         entityType: rideData.lobbyId ? 'lobby' : 'ride_request',
         entityId: rideData.lobbyId || rideData.id,
-        summary: `Cancelled a ${serviceLabel}${reason ? `: ${reason}` : ''}`,
-        details: { reason, orderId: rideData.orderId || null },
+        summary: `${deliveryReturnedToSearch ? 'Returned a delivery to driver search' : `Cancelled a ${serviceLabel}`}${reason ? `: ${reason}` : ''}`,
+        details: { reason, orderId: rideData.orderId || null, returnedToDriverSearch: deliveryReturnedToSearch },
         actorEmail: user.email,
         actorName: user.name,
       });
@@ -2454,8 +2499,8 @@ export default function ActiveRide() {
     }
   };
 
-  // Watch for a customer cancelling the accepted ride. A shared lobby has no
-  // ride_requests row, so its own status is the cancellation source of truth.
+  // Watch for a customer or business cancelling an assigned ride. A shared lobby
+  // has no ride_requests row, so its own status is the cancellation source.
   useEffect(() => {
     const requestId = rideData?.id;
     const lobbyId = rideData?.lobbyId;
@@ -2551,8 +2596,10 @@ export default function ActiveRide() {
         syncRideResume(null);
         setCustomerCancellation({
           reason: data.cancel_reason || null,
-          cancelledBy: data.cancelled_by || null,
-          passenger: String(data.customer_id || rideData.customerId || '')
+          cancelledBy: String(data.cancelled_by || 'customer').toLowerCase(),
+          passenger: String(data.cancelled_by || '').toLowerCase() === 'business' && isDeliveryRide(rideData)
+            ? null
+            : String(data.customer_id || rideData.customerId || '')
             ? {
                 id: String(data.customer_id || rideData.customerId),
                 name: String(resolvedName || rideData.customerName || 'Passenger').trim(),
@@ -2729,7 +2776,11 @@ export default function ActiveRide() {
         }
         return { label: 'Confirm Pickup', onClick: () => updateStatus('pickup'), isComplete: false };
       case 'arrived':
-        return { label: 'Confirm Pickup', onClick: () => updateStatus('pickup'), isComplete: false };
+        return {
+          label: isDeliveryRide(rideData) ? 'Pick Up Order' : 'Confirm Pickup',
+          onClick: () => updateStatus('pickup'),
+          isComplete: false,
+        };
       case 'pickup':
         return {
           label: isSharedRide && nextSharedDropoffPassengerName
@@ -2806,6 +2857,7 @@ export default function ActiveRide() {
 
   // The customer cancelled — say so, and show the reason they gave.
   if (customerCancellation) {
+    const businessReassignedDelivery = customerCancellation.cancelledBy === 'business' && isDeliveryRide(rideData);
     const cancelledPassenger = customerCancellation.passenger;
     const cancelledPassengerAvatar = cancelledPassenger?.avatarUrl
       || (cancelledPassenger?.id ? passengerAvatars[cancelledPassenger.id] : null)
@@ -2846,9 +2898,13 @@ export default function ActiveRide() {
           <RideModal ariaLabel="Ride cancelled" zIndexClassName="z-[4000]" contentClassName="p-6">
             <div className="text-center">
               <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-[var(--error-soft)] text-[var(--error)]"><X className="size-7" aria-hidden="true" /></div>
-              <h3 className="mb-2 text-xl font-bold text-[var(--ink)]">Ride cancelled</h3>
+              <h3 className="mb-2 text-xl font-bold text-[var(--ink)]">
+                {businessReassignedDelivery ? 'Delivery reassigned' : 'Ride cancelled'}
+              </h3>
               <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-                {customerCancellation.cancelledBy === 'driver' || customerCancellation.cancelledBy === 'rider'
+                {businessReassignedDelivery
+                  ? 'The restaurant reassigned this delivery. The food order is still active and available to another driver.'
+                  : customerCancellation.cancelledBy === 'driver' || customerCancellation.cancelledBy === 'rider'
                   ? 'This ride was cancelled by the driver.'
                   : rideData.lobbyId ? 'The last passenger left this shared ride.' : 'The passenger cancelled this ride.'}
               </p>
@@ -2867,9 +2923,13 @@ export default function ActiveRide() {
                 <p className="text-sm text-[var(--error)]">{customerCancellation.reason}</p>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-2">
-              <Button type="button" variant="outline" onClick={() => openRideReport(cancelledPassenger ? { id: cancelledPassenger.id, name: cancelledPassenger.name } : undefined)} className="border-[var(--error)] text-[var(--error)] hover:bg-[var(--error-soft)]"><Flag className="mr-2 size-4" aria-hidden="true" />Report</Button>
-              <Button onClick={() => navigate('/rider')} className="bg-[var(--primary)] font-bold text-white">Confirm</Button>
+            <div className={businessReassignedDelivery ? 'grid grid-cols-1 gap-2' : 'grid grid-cols-2 gap-2'}>
+              {!businessReassignedDelivery && (
+                <Button type="button" variant="outline" onClick={() => openRideReport(cancelledPassenger ? { id: cancelledPassenger.id, name: cancelledPassenger.name } : undefined)} className="border-[var(--error)] text-[var(--error)] hover:bg-[var(--error-soft)]"><Flag className="mr-2 size-4" aria-hidden="true" />Report</Button>
+              )}
+              <Button onClick={() => navigate('/rider', { replace: true })} className="bg-[var(--primary)] font-bold text-white">
+                {businessReassignedDelivery ? 'Back to deliveries' : 'Confirm'}
+              </Button>
             </div>
           </RideModal>
         )}
@@ -3463,8 +3523,11 @@ export default function ActiveRide() {
                     </div>
                   )}
                   {!isSharedRide && (
-                    <div className="flex gap-2 mt-1">
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
                       <Badge className="bg-[var(--primary)]">₱{rideData.amount}</Badge>
+                      {isDeliveryRide(rideData) && (
+                        <span className="text-[10px] font-semibold text-[var(--muted-foreground)]">Delivery Fee</span>
+                      )}
                       <Badge variant="outline" className="text-[var(--muted-foreground)]">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>
                     </div>
                   )}
@@ -3619,7 +3682,7 @@ export default function ActiveRide() {
                   status={showRideComplete ? 'delivered' : ['pickup', 'drop-off', 'payment'].includes(rideData.status) ? 'picked_up' : 'preparing'}
                   driverStatus={driverProgressStatus[rideData.status]}
                   deliveryMode="delivery"
-                  showRestaurantArrival
+                  audience="driver"
                 />
               </RideSurfaceCard>
             )}

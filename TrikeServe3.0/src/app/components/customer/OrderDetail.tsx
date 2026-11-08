@@ -49,6 +49,8 @@ interface OrderData {
   createdAt: string;
   driverName?: string;
   driverId?: string;
+  deliveryRequestId?: string | null;
+  deliveryRequestCreatedAt?: string | null;
   /**
    * Live rider progress for this order, from the ride request that carries it.
    * `orders.status` only says "a rider is involved"; this says what they are
@@ -101,10 +103,14 @@ function buildOrderData(dbOrder: any): OrderData {
     paymentConfirmedAt: dbOrder.payment_confirmed_at ?? null,
     needsCutlery: dbOrder.needs_cutlery || false,
     createdAt: dbOrder.created_at,
-    driverName: dbOrder.driver_name || undefined,
+    // Driver identity and progress come from the current live ride request.
+    // The order row may still carry a name from an assignment the business removed.
+    driverName: undefined,
     driverId: undefined,
-    driverStatus: dbOrder.driver_status || null,
-    driverMessage: dbOrder.driver_status_message || null,
+    deliveryRequestId: null,
+    deliveryRequestCreatedAt: null,
+    driverStatus: null,
+    driverMessage: null,
     cancelReason: dbOrder.cancel_reason || null,
     cancelledBy: dbOrder.cancelled_by || null,
   };
@@ -131,7 +137,7 @@ function parseAddressCoordinates(address?: string | null): { lat: number; lng: n
 const statusColors: Record<string, string> = {
   'pending': 'bg-[var(--amber)] text-white',
   'preparing': 'bg-[var(--info)] text-white',
-  'ready': 'bg-[var(--success)] text-white',
+  'ready': 'bg-[var(--info)] text-white',
   'confirmed': 'bg-[var(--info)] text-white',
   'on-the-way': 'bg-[var(--info)] text-white',
   'picked_up': 'bg-[var(--info)] text-white',
@@ -148,12 +154,16 @@ const statusColors: Record<string, string> = {
  */
 const statusLabels: Record<string, string> = {
   'pending': 'New Order',
-  'payment-confirmed': 'Payment confirmed',
-  'preparing': 'Preparing Your Order',
-  'ready': 'Ready for Pickup',
-  'confirmed': 'Driver Assigned',
-  'on-the-way': 'On the Way',
-  'picked_up': 'Order picked up',
+  'payment-confirmed': 'Accepted',
+  'preparing': 'Preparing',
+  'ready': 'Preparing',
+  'confirmed': 'Preparing',
+  'on-the-way': 'Preparing',
+  'picked_up': 'Out for Delivery',
+  'picked-up': 'Out for Delivery',
+  'dropped-off': 'Arrived',
+  'dropped_off': 'Arrived',
+  'awaiting-payment': 'Arrived',
   'delivered': 'Delivered',
   'cancelled': 'Cancelled',
 };
@@ -178,6 +188,8 @@ export default function OrderDetail() {
   const { orderId } = useParams();
   const { user } = useAuth();
   const [order, setOrder] = useState<OrderData | null>(null);
+  const orderRef = useRef<OrderData | null>(null);
+  orderRef.current = order;
   const [restaurantProfile, setRestaurantProfile] = useState<OrderRestaurantProfile | null>(null);
   const [incomingOrderChat, setIncomingOrderChat] = useState<{
     conversationId: string;
@@ -260,25 +272,27 @@ export default function OrderDetail() {
         try {
           const { data: rideReq } = await supabase
             .from('ride_requests')
-            .select('accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
+            .select('id, status, created_at, accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
             .eq('order_id', orderId)
-            .not('accepted_driver_id', 'is', null)
-            .order('updated_at', { ascending: false })
+            .in('status', ['pending', 'accepted', 'on-the-way', 'arrived', 'in-progress', 'in_progress', 'completed'])
+            .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
 
           if (rideReq) {
+            data.deliveryRequestId = rideReq.id;
+            data.deliveryRequestCreatedAt = rideReq.created_at;
             const pickupLat = Number(rideReq.pickup_lat);
             const pickupLng = Number(rideReq.pickup_lng);
             if (rideReq.pickup_lat != null && rideReq.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
               setRestaurantLocation({ lat: pickupLat, lng: pickupLng });
             }
-            if (rideReq.accepted_driver_id) data.driverId = rideReq.accepted_driver_id;
-            if (rideReq.driver_name) data.driverName = rideReq.driver_name;
-            // The rider's own progress is only on the ride request, and it is what
-            // moves the track past "Rider Assigned".
-            if (rideReq.driver_status) data.driverStatus = rideReq.driver_status;
-            if (rideReq.driver_status_message) data.driverMessage = rideReq.driver_status_message;
+            data.driverId = rideReq.accepted_driver_id || undefined;
+            data.driverName = rideReq.accepted_driver_id ? rideReq.driver_name || undefined : undefined;
+            // The rider's own progress is only on the ride request and advances
+            // the role-specific order milestones.
+            data.driverStatus = rideReq.driver_status || null;
+            data.driverMessage = rideReq.driver_status_message || null;
             // The live driver GPS lives on the ride request (the orders table may
             // not have driver_lat/lng columns).
             if (rideReq.driver_lat && rideReq.driver_lng) {
@@ -421,46 +435,54 @@ export default function OrderDetail() {
          * shared GPS: a rider who has arrived at the shop but not moved yet still
          * has a status that moves the track.
          */
-        const { data: rideReq } = await supabase
+        const { data: rideReq, error: rideReqError } = await supabase
           .from('ride_requests')
-          .select('accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
+          .select('id, status, created_at, accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
           .eq('order_id', orderId)
-          .order('updated_at', { ascending: false })
+          .in('status', ['pending', 'accepted', 'on-the-way', 'arrived', 'in-progress', 'in_progress', 'completed'])
+          .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        const lat = data.driver_lat ?? rideReq?.driver_lat;
-        const lng = data.driver_lng ?? rideReq?.driver_lng;
-        if (lat && lng) {
-          setDriverLocation({ lat, lng });
-        }
+        const lat = rideReq?.driver_lat;
+        const lng = rideReq?.driver_lng;
+        if (!rideReqError) setDriverLocation(lat && lng ? { lat, lng } : null);
         const pickupLat = Number(rideReq?.pickup_lat);
         const pickupLng = Number(rideReq?.pickup_lng);
         if (rideReq?.pickup_lat != null && rideReq?.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
           setRestaurantLocation({ lat: pickupLat, lng: pickupLng });
+        } else if (!rideReq && !rideReqError) {
+          setRestaurantLocation(null);
         }
 
         // Build new order data and always set it
         const newData = buildOrderData(data);
-        newData.driverId = rideReq?.accepted_driver_id || newData.driverId;
-        newData.driverName = rideReq?.driver_name || newData.driverName;
-        newData.driverStatus = rideReq?.driver_status ?? null;
-        newData.driverMessage = rideReq?.driver_status_message ?? null;
+        newData.deliveryRequestId = rideReq?.id || null;
+        newData.deliveryRequestCreatedAt = rideReq?.created_at || null;
+        newData.driverId = rideReq?.accepted_driver_id || undefined;
+        newData.driverName = rideReq?.accepted_driver_id ? rideReq.driver_name || undefined : undefined;
+        newData.driverStatus = rideReq?.driver_status || null;
+        newData.driverMessage = rideReq?.driver_status_message || null;
         setOrder(prev => {
-          // Preserve driverId and businessId from previous state (not in DB order row)
+          // A ride-request read error is not evidence that the driver was removed.
           if (prev) {
-            newData.driverId = newData.driverId || prev.driverId;
             newData.businessId = newData.businessId || prev.businessId;
-            // Keep the last known rider status when this poll saw no ride request
-            // (no rider yet, or the read failed) — the track must not fall back.
-            newData.driverStatus = newData.driverStatus || prev.driverStatus || null;
-            newData.driverMessage = newData.driverMessage || prev.driverMessage || null;
+            if (rideReqError) {
+              newData.deliveryRequestId = prev.deliveryRequestId;
+              newData.deliveryRequestCreatedAt = prev.deliveryRequestCreatedAt;
+              newData.driverId = prev.driverId;
+              newData.driverName = prev.driverName;
+              newData.driverStatus = prev.driverStatus || null;
+              newData.driverMessage = prev.driverMessage || null;
+            }
           }
           // Only update if status or driver changed
           if (
             prev &&
             prev.status === newData.status &&
             prev.paymentConfirmedAt === newData.paymentConfirmedAt &&
+            prev.deliveryRequestId === newData.deliveryRequestId &&
+            prev.driverId === newData.driverId &&
             prev.driverName === newData.driverName &&
             prev.driverStatus === newData.driverStatus &&
             prev.driverMessage === newData.driverMessage
@@ -483,27 +505,54 @@ export default function OrderDetail() {
   useEffect(() => {
     if (!orderId) return;
     const unsubscribe = supabaseHelpers.subscribeToOrderDelivery(orderId, (ride) => {
+      const currentRequestCreatedAt = orderRef.current?.deliveryRequestCreatedAt;
+      const eventCreatedAt = ride?.created_at;
+      if (
+        currentRequestCreatedAt &&
+        eventCreatedAt &&
+        new Date(eventCreatedAt).getTime() < new Date(currentRequestCreatedAt).getTime()
+      ) return;
+
+      const requestStatus = String(ride?.status || '').trim().toLowerCase().replace(/_/g, '-');
+      if (requestStatus === 'cancelled') {
+        setDriverLocation(null);
+        setRestaurantLocation(null);
+        setOrder((prev) => prev ? {
+          ...prev,
+          deliveryRequestId: null,
+          deliveryRequestCreatedAt: eventCreatedAt || prev.deliveryRequestCreatedAt || null,
+          driverId: undefined,
+          driverName: undefined,
+          driverStatus: null,
+          driverMessage: null,
+        } : prev);
+        return;
+      }
+
       if (ride.driver_lat && ride.driver_lng) {
         setDriverLocation({ lat: ride.driver_lat, lng: ride.driver_lng });
+      } else {
+        setDriverLocation(null);
       }
       const pickupLat = Number(ride.pickup_lat);
       const pickupLng = Number(ride.pickup_lng);
       if (ride.pickup_lat != null && ride.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
         setRestaurantLocation({ lat: pickupLat, lng: pickupLng });
+      } else {
+        setRestaurantLocation(null);
       }
       // The rider's status arrives here first, so the track advances on the
-      // moment they tap a button rather than on the next 3s poll.
-      if (ride.driver_status) {
-        setOrder(prev => (prev ? {
-          ...prev,
-          driverId: prev.driverId || ride.accepted_driver_id || undefined,
-          driverName: prev.driverName || ride.driver_name || undefined,
-          driverStatus: ride.driver_status,
-          driverMessage: ride.driver_status_message || prev.driverMessage || null,
-        } : prev));
-      } else if (ride.driver_name) {
-        setOrder(prev => (prev && !prev.driverName ? { ...prev, driverName: ride.driver_name } : prev));
-      }
+      // moment they tap a button rather than on the next 3s poll. A new pending
+      // request also clears the previous driver's details immediately.
+      setOrder((prev) => prev ? {
+        ...prev,
+        deliveryRequestId: ride.id || null,
+        deliveryRequestCreatedAt: eventCreatedAt || prev.deliveryRequestCreatedAt || null,
+        driverId: ride.accepted_driver_id || undefined,
+        driverName: ride.accepted_driver_id ? ride.driver_name || undefined : undefined,
+        driverStatus: ride.driver_status || null,
+        driverMessage: ride.driver_status_message || null,
+      } : prev);
     });
     return unsubscribe;
   }, [orderId]);
@@ -776,14 +825,21 @@ export default function OrderDetail() {
     driverAssigned: Boolean(order.driverId || order.driverName),
     deliveryMode: order.deliveryMode,
     driverLabel: 'Driver',
+    audience: 'customer',
   });
+
+  const isFindingDriver = order.deliveryMode === 'delivery'
+    && (Boolean(order.deliveryRequestId) || normalizedOrderStatus === 'confirmed')
+    && !order.driverId
+    && !order.driverName
+    && !['delivered', 'completed', 'cancelled'].includes(normalizedOrderStatus);
 
   // Tracking the map is only useful once a rider exists, and only on delivery.
   const isActiveDelivery =
     order.deliveryMode === 'delivery' &&
     !['delivered', 'completed'].includes(order.status.trim().toLowerCase()) &&
     progress.hasRider &&
-    progress.currentStepIsRiderStep;
+    Boolean(order.driverId || order.driverName);
 
   const handleChatWithBusiness = () => {
     if (order.businessId) {
@@ -830,11 +886,11 @@ export default function OrderDetail() {
             )}
           </div>
         </div>
-        <Badge className={`${statusColors[order.status]} text-xs`}>
-          {progress.currentStepIsRiderStep && progress.riderHasStarted
+        <Badge className={`${isFindingDriver ? 'bg-[var(--amber)] text-white' : statusColors[order.status]} text-xs`}>
+          {isFindingDriver
+            ? 'Finding Driver'
+            : progress.currentStepIsRiderStep && progress.riderHasStarted
             ? progress.currentTitle
-            : order.status === 'confirmed' && !order.driverId && !order.driverName
-              ? 'Finding a Driver'
               : statusLabels[order.status]}
         </Badge>
         {progress.currentStepIsRiderStep && progress.riderHasStarted && (
@@ -951,7 +1007,7 @@ export default function OrderDetail() {
             status={order.status}
             driverStatus={order.driverStatus}
             deliveryMode={order.deliveryMode}
-            showRestaurantArrival
+            audience="customer"
           />
         </Card>
 

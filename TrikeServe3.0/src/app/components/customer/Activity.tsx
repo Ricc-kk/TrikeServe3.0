@@ -202,9 +202,9 @@ export default function Activity() {
     loadActivityFromSupabase();
   }, [user?.id]);
 
-  const loadActivityFromSupabase = async () => {
+  const loadActivityFromSupabase = async (showLoading = true) => {
     try {
-      setIsLoading(true);
+      if (showLoading) setIsLoading(true);
 
       if (!user?.id) {
         console.log('[Activity] No user logged in');
@@ -333,20 +333,22 @@ export default function Activity() {
       }
     } catch (error) {
       console.error('[Activity] Exception loading activity:', error);
-      setDisplayOrders([]);
-      setDisplayRides([]);
+      if (showLoading) {
+        setDisplayOrders([]);
+        setDisplayRides([]);
+      }
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   };
 
-  // Keep Activity current if an order is placed while this screen is open, or
-  // when the customer switches back to the app after checkout.
+  // Keep Activity current if an order is placed or a ride is completed while
+  // this screen is open, or when the customer switches back to the app.
   useEffect(() => {
     if (!user?.id) return;
     const refreshActivity = (payload?: { eventType?: string }) => {
       if (payload?.eventType === 'INSERT') setActiveTab('deliveries');
-      void loadActivityFromSupabase();
+      void loadActivityFromSupabase(false);
     };
     const channel = supabase
       .channel(`customer-activity-orders-${user.id}`)
@@ -357,10 +359,39 @@ export default function Activity() {
         filter: `customer_id=eq.${user.id}`,
       }, refreshActivity)
       .subscribe();
+
+    const refreshedCompletedRideIds = new Set<string>();
+    const rideChannel = supabase
+      .channel(`customer-activity-rides-${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'ride_requests',
+        filter: `customer_id=eq.${user.id}`,
+      }, (payload) => {
+        const ride = payload.new as any;
+        const rideId = String(ride?.id || '');
+        if (
+          !rideId
+          || ride?.status !== 'completed'
+          || isDeliveryRide(ride)
+          || refreshedCompletedRideIds.has(rideId)
+        ) return;
+        refreshedCompletedRideIds.add(rideId);
+        setActiveTab('rides');
+        void loadActivityFromSupabase(false);
+      })
+      .subscribe((status) => {
+        // Reconcile after subscribing so a completion between the initial load
+        // and channel readiness is not missed.
+        if (status === 'SUBSCRIBED') void loadActivityFromSupabase(false);
+      });
+
     window.addEventListener('focus', refreshActivity);
     return () => {
       window.removeEventListener('focus', refreshActivity);
       void supabase.removeChannel(channel);
+      void supabase.removeChannel(rideChannel);
     };
   }, [user?.id]);
 
