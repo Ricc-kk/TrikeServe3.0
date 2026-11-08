@@ -806,18 +806,22 @@ export default function RestaurantDetail() {
        deliveryFee: restaurantData.deliveryFee
      };
 
-     // Calculate total price with customizations
-     let itemPrice = item.price;
-     customizations.forEach((customization: any) => {
-       itemPrice += customization.price * (customization.quantity ?? 1);
-     });
+     // Keep the dish unit price separate from selected add-ons. Add-ons are
+     // charged once for this cart row, while the main quantity changes only
+     // the number of base dishes.
+     const customizationTotal = customizations.reduce(
+       (total: number, customization: any) =>
+         total + Number(customization.price || 0) * Number(customization.quantity ?? 1),
+       0,
+     );
 
      addItemToCart(restaurantInfo, {
        id: item.id,
        name: item.name,
        description: item.description,
-       price: itemPrice,
+       price: item.price,
        quantity: quantity,
+       customizationTotal,
        image: item.image,
        category: item.category,
        badge: item.badge,

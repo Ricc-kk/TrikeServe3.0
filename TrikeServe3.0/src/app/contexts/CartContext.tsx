@@ -15,8 +15,11 @@ export interface CartItem {
   id: number | string;
   name: string;
   description: string;
+  /** Base price of one dish; add-on pricing is kept in `customizationTotal`. */
   price: number;
   quantity: number;
+  /** Selected add-ons for this cart row, charged once independent of dish quantity. */
+  customizationTotal?: number;
   image: string;
   category: string;
   badge?: "most-ordered" | "most-liked" | "signature";
@@ -82,6 +85,33 @@ export const cartLineKey = (
 const keyOf = (item: CartItem): string =>
   item.lineKey ?? cartLineKey(item.id, item.customizations, item.note);
 
+const customizationTotalFor = (customizations?: CustomizationSelection[]) =>
+  (customizations ?? []).reduce(
+    (total, customization) =>
+      total + Number(customization.price || 0) * Number(customization.quantity ?? 1),
+    0,
+  );
+
+/** Total for a cart/order row: dish price times quantity plus one add-on total. */
+export const cartItemTotal = (
+  item: Pick<CartItem, "price" | "quantity" | "customizationTotal">,
+) => Number(item.price || 0) * Number(item.quantity ?? 1) + Number(item.customizationTotal ?? 0);
+
+/** Convert a cart row saved before add-on pricing became a one-time line amount. */
+const normalizeCartItem = (item: CartItem): CartItem => {
+  const price = Number(item.price) || 0;
+  if (item.customizationTotal != null) {
+    return { ...item, price, customizationTotal: Number(item.customizationTotal) || 0 };
+  }
+
+  const customizationTotal = customizationTotalFor(item.customizations);
+  return {
+    ...item,
+    price: Math.max(0, price - customizationTotal),
+    customizationTotal,
+  };
+};
+
 export interface CartRestaurant {
   id: string; // Changed from number to string to store business email
   name: string;
@@ -138,7 +168,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     try {
       const savedCart = localStorage.getItem(`cart_${userEmail}`);
-      setCartRestaurants(savedCart ? JSON.parse(savedCart) : []);
+      const savedRestaurants: CartRestaurant[] = savedCart ? JSON.parse(savedCart) : [];
+      setCartRestaurants(savedRestaurants.map((restaurant) => ({
+        ...restaurant,
+        items: (restaurant.items ?? []).map((item) => {
+          const normalized = normalizeCartItem(item);
+          return { ...normalized, lineKey: keyOf(normalized) };
+        }),
+      })));
     } catch (error) {
       console.error('Error loading cart:', error);
       setCartRestaurants([]);
@@ -168,22 +205,30 @@ export function CartProvider({ children }: { children: ReactNode }) {
         // Restaurant exists, check if item exists
         const updatedRestaurants = [...prev];
         const restaurant = updatedRestaurants[existingRestaurantIndex];
-        const incoming = { ...item, lineKey: keyOf(item) };
+        const addedQuantity = Math.max(1, Math.min(50, Math.floor(Number(item.quantity) || 1)));
+        const normalizedItem = normalizeCartItem(item);
+        const incoming = { ...normalizedItem, quantity: addedQuantity, lineKey: keyOf(normalizedItem) };
         const existingItemIndex = restaurant.items.findIndex(
           (i) => keyOf(i) === incoming.lineKey
         );
 
         if (existingItemIndex !== -1) {
-          // Same dish and same choices: increase quantity
-          restaurant.items[existingItemIndex].quantity += 1;
+          // Same dish and choices: adding quantity changes the dish count while
+          // the row's selected add-ons remain a single line amount.
+          restaurant.items[existingItemIndex].quantity = Math.min(
+            50,
+            restaurant.items[existingItemIndex].quantity + incoming.quantity,
+          );
         } else {
           // A different set of choices is a different order, not more of this one
-          restaurant.items.push({ ...incoming, quantity: 1 });
+          restaurant.items.push(incoming);
         }
 
         return updatedRestaurants;
       } else {
         // Restaurant doesn't exist, create new entry
+        const normalizedItem = normalizeCartItem(item);
+        const addedQuantity = Math.max(1, Math.min(50, Math.floor(Number(item.quantity) || 1)));
         const newRestaurant: CartRestaurant = {
           id: restaurantData.id, // Simple ID generation
           name: restaurantData.name,
@@ -191,7 +236,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           distance: restaurantData.distance,
           estimatedTime: restaurantData.time,
           image: restaurantData.image,
-          items: [{ ...item, lineKey: keyOf(item), quantity: 1 }],
+          items: [{ ...normalizedItem, lineKey: keyOf(normalizedItem), quantity: addedQuantity }],
           deliveryFee: restaurantData.deliveryFee,
           businessUserId: restaurantData.businessUserId,
           supabaseRestaurantId: restaurantData.supabaseRestaurantId,

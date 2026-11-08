@@ -191,7 +191,7 @@ export default function CustomizationModal({
   };
 
   const calculateTotalPrice = () => {
-    let total = item.price;
+    let addOnTotal = 0;
     if (item.customizationGroups) {
       item.customizationGroups.forEach((group) => {
         const groupSelections = selections[group.id] || {};
@@ -200,12 +200,12 @@ export default function CustomizationModal({
           const optionId = Number(optionIdValue);
           const option = group.options.find((opt) => opt.id === optionId);
           if (option) {
-            total += option.price * quantity;
+            addOnTotal += option.price * quantity;
           }
         });
       });
     }
-    return total * quantity;
+    return item.price * quantity + addOnTotal;
   };
 
   /*

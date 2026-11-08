@@ -1,7 +1,7 @@
 import { ArrowRight, ShoppingCart } from "lucide-react";
 import { Link } from "react-router";
 
-import { useCartOptional } from "../../contexts/CartContext";
+import { cartItemTotal, useCartOptional } from "../../contexts/CartContext";
 
 /** A compact reminder, without pushing the home feed behind a full cart list. */
 export default function CustomerCartPreview() {
@@ -13,7 +13,7 @@ export default function CustomerCartPreview() {
   if (count === 0) return null;
 
   const subtotal = cartRestaurants.reduce(
-    (total, restaurant) => total + restaurant.items.reduce((sum, item) => sum + item.price * item.quantity, 0),
+    (total, restaurant) => total + restaurant.items.reduce((sum, item) => sum + cartItemTotal(item), 0),
     0,
   );
 

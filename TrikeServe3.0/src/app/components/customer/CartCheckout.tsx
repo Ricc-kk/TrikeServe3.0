@@ -14,7 +14,7 @@ import { Card } from "../ui/card";
 import { Button } from "../ui/button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
-import { useCart, cartLineKey } from "../../contexts/CartContext";
+import { useCart, cartLineKey, cartItemTotal } from "../../contexts/CartContext";
 import { useOrders } from "../../contexts/OrderContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
@@ -350,7 +350,7 @@ export default function CartCheckout() {
     : `₱${deliveryQuote.rates.baseFare} covers first ${formatDeliveryKm(deliveryQuote.rates.baseFareIncludedKm)} km${deliveryExtraKm > 0 ? ` + ₱${deliveryQuote.rates.perKm}/km for ${formatDeliveryKm(deliveryExtraKm)} km after` : ""}${deliveryQuote.terminalName ? ` · ${deliveryQuote.terminalName}` : ""}`;
 
   const subtotal = restaurant
-    ? restaurant.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+    ? restaurant.items.reduce((sum, item) => sum + cartItemTotal(item), 0)
     : 0;
 
   const total = subtotal + deliveryFee;
@@ -575,6 +575,7 @@ export default function CartCheckout() {
           description: item.description,
           price: item.price,
           quantity: item.quantity,
+          customizationTotal: item.customizationTotal ?? 0,
           image: item.image,
           category: item.category,
           customizations: item.customizations || [],
@@ -994,7 +995,7 @@ export default function CartCheckout() {
 
                   <div className="text-right">
                     <span className="font-semibold text-[var(--ink)]">
-                      ₱{(item.price * item.quantity).toFixed(2)}
+                      ₱{cartItemTotal(item).toFixed(2)}
                     </span>
                   </div>
                 </div>
@@ -1002,7 +1003,7 @@ export default function CartCheckout() {
                 {/* Quantity controls */}
                 <div className="mt-2 flex items-center justify-between pl-[76px]">
                   <span className="text-sm text-[var(--muted-foreground)]">
-                    ₱{item.price}.00 each
+                    ₱{item.price.toFixed(2)} each
                   </span>
                   <div className="flex items-center gap-3">
                     {item.quantity === 1 ? (

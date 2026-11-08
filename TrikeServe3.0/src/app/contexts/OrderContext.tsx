@@ -20,6 +20,8 @@ export interface OrderItem {
   description: string;
   price: number;
   quantity: number;
+  /** Selected add-ons for this order line, charged once independent of dish quantity. */
+  customizationTotal?: number;
   image: string;
   category: string;
   customizations?: CustomizationSelection[];

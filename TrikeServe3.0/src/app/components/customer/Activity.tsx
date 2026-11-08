@@ -653,7 +653,7 @@ export default function Activity() {
                           {order.items.map((item, index) => (
                             <li key={`${order.id}-modal-item-${index}`} className="flex justify-between gap-3 text-sm">
                               <span className="min-w-0 break-words text-[var(--ink)]">{item?.name || item?.product_name || item?.title || 'Item'}<span className="block text-xs text-[var(--muted-foreground)]">Qty: {item?.quantity || item?.qty || 1}</span></span>
-                              {item?.price != null && <span className="shrink-0 font-semibold text-[var(--ink)]">₱{(Number(item.price) * Number(item.quantity || item.qty || 1)).toFixed(2)}</span>}
+                              {item?.price != null && <span className="shrink-0 font-semibold text-[var(--ink)]">₱{(Number(item.price) * Number(item.quantity || item.qty || 1) + Number(item.customizationTotal || 0)).toFixed(2)}</span>}
                             </li>
                           ))}
                         </ul>

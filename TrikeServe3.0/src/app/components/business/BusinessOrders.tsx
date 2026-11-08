@@ -1957,7 +1957,7 @@ export default function BusinessOrders() {
                             </p>
                           )}
                         </div>
-                        <p className="font-bold text-[var(--ink)] text-sm md:text-base flex-shrink-0">₱{(item.price * item.quantity).toFixed(2)}</p>
+                        <p className="font-bold text-[var(--ink)] text-sm md:text-base flex-shrink-0">₱{(item.price * item.quantity + Number(item.customizationTotal || 0)).toFixed(2)}</p>
                       </div>
                     ))}
                   </div>

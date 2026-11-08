@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { useEffect, useRef, useState } from "react";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
-import { useCart, type CartRestaurant } from "../../contexts/CartContext";
+import { cartItemTotal, useCart, type CartRestaurant } from "../../contexts/CartContext";
 import BottomNav from "../ui/BottomNav";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 
@@ -52,7 +52,7 @@ const SWIPE_CLOSE_RATIO = 0.5;
 const REVEAL_CLEARANCE_PX = 48;
 
 function restaurantSubtotal(restaurant: CartRestaurant) {
-  return restaurant.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  return restaurant.items.reduce((sum, item) => sum + cartItemTotal(item), 0);
 }
 
 interface CardProps {
