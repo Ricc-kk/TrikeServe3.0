@@ -582,6 +582,53 @@ CREATE POLICY "Riders can view assigned ride requests" ON public.ride_requests
   FOR SELECT TO authenticated
   USING (driver_id = auth.uid());
 
+DROP POLICY IF EXISTS "Riders can view open delivery requests" ON public.ride_requests;
+CREATE POLICY "Riders can view open delivery requests" ON public.ride_requests
+  FOR SELECT TO authenticated
+  USING (
+    ride_type = 'special'
+    AND order_id IS NOT NULL
+    AND status = 'pending'
+    AND driver_id IS NULL
+    AND accepted_driver_id IS NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+    )
+  );
+
+DROP POLICY IF EXISTS "Riders can accept open delivery requests" ON public.ride_requests;
+CREATE POLICY "Riders can accept open delivery requests" ON public.ride_requests
+  FOR UPDATE TO authenticated
+  USING (
+    ride_type = 'special'
+    AND order_id IS NOT NULL
+    AND status = 'pending'
+    AND driver_id IS NULL
+    AND accepted_driver_id IS NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+    )
+  )
+  WITH CHECK (
+    ride_type = 'special'
+    AND order_id IS NOT NULL
+    AND status = 'accepted'
+    AND driver_id = auth.uid()
+    AND accepted_driver_id = auth.uid()
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+    )
+  );
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON favorites TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON favorite_menu_items TO authenticated;
 

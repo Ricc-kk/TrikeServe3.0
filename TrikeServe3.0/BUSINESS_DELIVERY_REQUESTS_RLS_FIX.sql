@@ -6,7 +6,7 @@ ALTER TABLE public.ride_requests
   ADD COLUMN IF NOT EXISTS order_number VARCHAR(20);
 
 ALTER TABLE public.ride_requests ENABLE ROW LEVEL SECURITY;
-GRANT SELECT, INSERT ON public.ride_requests TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.ride_requests TO authenticated;
 
 DROP POLICY IF EXISTS "Businesses can create delivery requests for own orders"
   ON public.ride_requests;
@@ -87,4 +87,57 @@ CREATE POLICY "Businesses can view delivery requests for own orders"
     )
   );
 
-SELECT 'Business delivery request read and insert policies installed' AS status;
+-- Riders need to see open delivery requests and atomically claim one. A
+-- delivery request is a special ride linked to an order; ordinary private
+-- ride requests do not have order_id set. The UPDATE check ensures a rider
+-- can only claim an unassigned request for their own rider account.
+DROP POLICY IF EXISTS "Riders can view open delivery requests" ON public.ride_requests;
+CREATE POLICY "Riders can view open delivery requests"
+  ON public.ride_requests
+  FOR SELECT TO authenticated
+  USING (
+    ride_type = 'special'
+    AND order_id IS NOT NULL
+    AND status = 'pending'
+    AND driver_id IS NULL
+    AND accepted_driver_id IS NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+    )
+  );
+
+DROP POLICY IF EXISTS "Riders can accept open delivery requests" ON public.ride_requests;
+CREATE POLICY "Riders can accept open delivery requests"
+  ON public.ride_requests
+  FOR UPDATE TO authenticated
+  USING (
+    ride_type = 'special'
+    AND order_id IS NOT NULL
+    AND status = 'pending'
+    AND driver_id IS NULL
+    AND accepted_driver_id IS NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+    )
+  )
+  WITH CHECK (
+    ride_type = 'special'
+    AND order_id IS NOT NULL
+    AND status = 'accepted'
+    AND driver_id = auth.uid()
+    AND accepted_driver_id = auth.uid()
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+    )
+  );
+
+SELECT 'Business delivery request and rider acceptance policies installed' AS status;
