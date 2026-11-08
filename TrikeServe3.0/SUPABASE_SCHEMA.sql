@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS ride_requests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   driver_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  accepted_driver_id UUID REFERENCES users(id) ON DELETE SET NULL,
   order_id UUID,
   order_number VARCHAR(20),
   pickup_location VARCHAR(255) NOT NULL,
@@ -56,6 +57,9 @@ CREATE TABLE IF NOT EXISTS ride_requests (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE public.ride_requests
+  ADD COLUMN IF NOT EXISTS accepted_driver_id UUID REFERENCES public.users(id) ON DELETE SET NULL;
 
 CREATE INDEX idx_ride_requests_customer ON ride_requests(customer_id);
 CREATE INDEX idx_ride_requests_driver ON ride_requests(driver_id);
@@ -500,6 +504,43 @@ CREATE POLICY "Businesses can create delivery requests for own orders" ON public
     )
   );
 
+-- Let a business read delivery requests for its own orders so the order sheet
+-- can show the assigned driver's profile without exposing other businesses'
+-- delivery locations or rider details.
+DROP POLICY IF EXISTS "Businesses can view delivery requests for own orders" ON public.ride_requests;
+CREATE POLICY "Businesses can view delivery requests for own orders" ON public.ride_requests
+  FOR SELECT TO authenticated
+  USING (
+    ride_type = 'special'
+    AND order_id IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS business_user
+      WHERE business_user.id = auth.uid()
+        AND business_user.role = 'business'
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM public.orders AS business_order
+      WHERE business_order.id = ride_requests.order_id
+        AND business_order.customer_id = ride_requests.customer_id
+        AND (
+          ride_requests.order_number IS NULL
+          OR business_order.order_number = ride_requests.order_number
+        )
+        AND lower(business_order.delivery_mode) = 'delivery'
+        AND (
+          business_order.business_id = auth.uid()
+          OR EXISTS (
+            SELECT 1
+            FROM public.restaurants AS shop
+            WHERE shop.business_user_id = auth.uid()
+              AND business_order.restaurant_email = shop.id::text
+          )
+        )
+    )
+  );
+
 DROP POLICY IF EXISTS "Riders can record completed shared rides" ON public.ride_requests;
 CREATE POLICY "Riders can record completed shared rides" ON public.ride_requests
   FOR INSERT TO authenticated
@@ -595,8 +636,56 @@ CREATE POLICY "Anyone signed in can read searches" ON restaurant_searches
   FOR SELECT USING (auth.uid() IS NOT NULL);
 
 -- RLS Policies for users
+CREATE OR REPLACE FUNCTION public.can_rider_view_active_customer_profile(p_customer_id UUID)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $function$
+  SELECT auth.uid() IS NOT NULL
+    AND p_customer_id IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+    )
+    AND (
+      EXISTS (
+        SELECT 1
+        FROM public.ride_requests AS ride
+        WHERE ride.accepted_driver_id = auth.uid()
+          AND ride.customer_id = p_customer_id
+          AND lower(replace(ride.status, '_', '-')) IN (
+            'accepted', 'on-the-way', 'arrived', 'in-progress',
+            'picked-up', 'dropped-off', 'awaiting-payment'
+          )
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM public.shared_ride_lobbies AS lobby
+        WHERE lobby.driver_id = auth.uid()
+          AND lobby.status IN ('driver_found', 'in_progress')
+          AND (
+            lobby.customer_id = p_customer_id
+            OR p_customer_id::TEXT = ANY(lobby.passengers)
+            OR public.lobby_json_contains_passenger(lobby.passengers_json, p_customer_id)
+          )
+      )
+    );
+$function$;
+REVOKE ALL ON FUNCTION public.can_rider_view_active_customer_profile(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.can_rider_view_active_customer_profile(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION public.can_rider_view_active_customer_profile(UUID) TO authenticated;
+
 CREATE POLICY "Users can view their own profile" ON users
   FOR SELECT USING (auth.uid()::text = id::text);
+
+DROP POLICY IF EXISTS "Riders can view profiles in their active rides" ON public.users;
+CREATE POLICY "Riders can view profiles in their active rides" ON public.users
+  FOR SELECT TO authenticated
+  USING (public.can_rider_view_active_customer_profile(id));
 
 CREATE POLICY "Users can update their own profile" ON users
   FOR UPDATE USING (auth.uid()::text = id::text);
@@ -632,6 +721,81 @@ CREATE POLICY "Anyone can view orders" ON orders
 -- Allow anyone to update orders (validation done by app)
 CREATE POLICY "Anyone can update orders" ON orders
   FOR UPDATE WITH CHECK (true);
+
+-- Record the restaurant handoff using a scoped function instead of granting
+-- rider clients direct UPDATE access to the customer's complete order row.
+CREATE OR REPLACE FUNCTION public.mark_delivery_order_picked_up(
+  p_order_id UUID DEFAULT NULL,
+  p_order_number TEXT DEFAULT NULL
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  v_driver_id UUID := auth.uid();
+  v_order_id UUID;
+BEGIN
+  IF v_driver_id IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'A signed-in rider is required';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.users AS rider
+    WHERE rider.id = v_driver_id
+      AND lower(rider.role) IN ('rider', 'driver')
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'Only riders can mark delivery orders picked up';
+  END IF;
+
+  IF p_order_id IS NOT NULL THEN
+    SELECT order_row.id
+      INTO v_order_id
+      FROM public.orders AS order_row
+      WHERE order_row.id = p_order_id;
+  END IF;
+
+  IF v_order_id IS NULL AND p_order_number IS NOT NULL THEN
+    SELECT order_row.id
+      INTO v_order_id
+      FROM public.orders AS order_row
+      WHERE order_row.order_number = p_order_number;
+  END IF;
+
+  IF v_order_id IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0002', MESSAGE = 'Delivery order not found';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.ride_requests AS ride
+    WHERE ride.order_id = v_order_id
+      AND ride.accepted_driver_id = v_driver_id
+      AND lower(replace(coalesce(ride.status, ''), '_', '-')) NOT IN ('cancelled', 'completed')
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'This rider is not assigned to the delivery order';
+  END IF;
+
+  UPDATE public.orders AS order_row
+    SET status = 'picked_up',
+        updated_at = now()
+    WHERE order_row.id = v_order_id
+      AND lower(replace(coalesce(order_row.delivery_mode, ''), '_', '-')) = 'delivery'
+      AND lower(replace(coalesce(order_row.status, ''), '_', '-')) NOT IN ('delivered', 'cancelled');
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'This delivery order can no longer be marked picked up';
+  END IF;
+
+  RETURN TRUE;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.mark_delivery_order_picked_up(UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.mark_delivery_order_picked_up(UUID, TEXT) FROM anon;
+GRANT EXECUTE ON FUNCTION public.mark_delivery_order_picked_up(UUID, TEXT) TO authenticated;
 
 -- Create Storage buckets
 INSERT INTO storage.buckets (id, name, public) VALUES

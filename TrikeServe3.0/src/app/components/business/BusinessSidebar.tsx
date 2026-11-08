@@ -104,7 +104,7 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen,
         .from('orders')
         .select('*')
         .eq('business_id', currentUser.id)
-        .in('status', ['pending', 'preparing', 'ready', 'on-the-way']);
+        .in('status', ['pending', 'preparing', 'ready', 'on-the-way', 'picked_up']);
 
       if (fetchError) {
         console.error('[BusinessSidebar] Error fetching orders from Supabase:', fetchError);

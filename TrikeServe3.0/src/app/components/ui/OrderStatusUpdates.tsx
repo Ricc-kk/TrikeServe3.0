@@ -46,7 +46,8 @@ export function OrderStatusUpdates({
       current = 3;
     } else if (
       !isPickup &&
-      ["picked-up", "in-progress", "dropped-off", "awaiting-payment"].includes(driverStatus)
+      (["picked-up", "in-progress", "dropped-off", "awaiting-payment"].includes(status) ||
+        ["picked-up", "in-progress", "dropped-off", "awaiting-payment"].includes(driverStatus))
     ) {
       current = 2;
     } else if (!isPickup && status === "on-the-way" && !driverStatus) {

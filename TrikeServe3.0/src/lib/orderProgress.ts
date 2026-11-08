@@ -127,6 +127,9 @@ const ORDER_STATUS_STEP: Record<string, number> = {
   // "Ready for delivery" - the shop published the order and a rider was requested.
   confirmed: RIDER_ASSIGNED_INDEX,
   'on-the-way': RIDER_ASSIGNED_INDEX,
+  // The order row records the restaurant handoff independently so the
+  // customer timeline advances even if ride_requests is briefly stale.
+  'picked-up': RIDER_ASSIGNED_INDEX + 1,
   delivered: DELIVERED_INDEX,
 };
 
@@ -250,6 +253,7 @@ export function getOrderProgress(input: {
     riderHasStarted: hasRider && (
       current > RIDER_ASSIGNED_INDEX ||
       status === 'on-the-way' ||
+      status === 'picked-up' ||
       ['on-the-way', 'arrived', 'in-progress', 'picked-up', 'dropped-off', 'awaiting-payment', 'completed'].includes(riderStatus ?? '')
     ),
     hasRider,

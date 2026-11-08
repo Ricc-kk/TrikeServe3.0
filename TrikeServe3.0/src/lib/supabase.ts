@@ -4421,6 +4421,19 @@ export const supabaseHelpers = {
     return { data: null, error: new Error('Missing order identifier') };
   },
 
+  // Mark an order picked up through a scoped database function. The function
+  // verifies that the signed-in rider accepted a delivery request for this order.
+  async markDeliveryOrderPickedUp(orderId?: string, orderNumber?: string) {
+    if (!orderId && !orderNumber) {
+      return { data: null, error: new Error('Missing order identifier') };
+    }
+
+    return supabase.rpc('mark_delivery_order_picked_up', {
+      p_order_id: orderId || null,
+      p_order_number: orderNumber || null,
+    });
+  },
+
   async updateOrder(orderId: string, updates: any) {
     const { data, error } = await supabase
       .from('orders')

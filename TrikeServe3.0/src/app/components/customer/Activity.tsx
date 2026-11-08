@@ -369,6 +369,7 @@ export default function Activity() {
       case 'preparing':
         return 'text-[var(--amber)] bg-[var(--amber-soft)]';
       case 'on-the-way':
+      case 'picked_up':
         return 'text-[var(--info)] bg-[var(--info-soft)]';
       case 'delivered':
         return 'text-[var(--success)] bg-[var(--success-soft)]';
@@ -385,6 +386,8 @@ export default function Activity() {
         return 'Preparing';
       case 'on-the-way':
         return 'On the way';
+      case 'picked_up':
+        return 'Out for delivery';
       case 'delivered':
         return 'Delivered';
       case 'cancelled':

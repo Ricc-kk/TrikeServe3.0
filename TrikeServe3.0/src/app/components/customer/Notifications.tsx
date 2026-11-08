@@ -164,6 +164,10 @@ export default function Notifications() {
         if (order.status === "delivered") {
           title = "Order Delivered";
           message = "Your order from " + order.restaurantName + " has been delivered successfully. Enjoy your meal!";
+        } else if (order.status === "picked_up") {
+          type = "delivery";
+          title = "Order picked up";
+          message = "Your driver has picked up your order from " + order.restaurantName + " and is heading to you.";
         } else if (order.status === "on-the-way") {
           type = "delivery";
           title = "Driver on the Way";

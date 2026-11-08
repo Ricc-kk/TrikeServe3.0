@@ -418,10 +418,23 @@ export default function PassengerRequests() {
         const nameMap: Record<string, string> = {};
         const avatarMap: Record<string, string> = {};
         if (profileIds.length > 0) {
-          const { data: usersData } = await supabase
+          const userProfiles = await supabase
             .from('users')
             .select('id, name, avatar_url')
             .in('id', profileIds);
+          let usersData = userProfiles.data;
+          // Older installs still keep photos in profile_photo_url. A missing
+          // avatar_url column should not hide the customer's name as well.
+          if (userProfiles.error) {
+            const legacyProfiles = await supabase
+              .from('users')
+              .select('id, name, profile_photo_url')
+              .in('id', profileIds);
+            usersData = (legacyProfiles.data || []).map((profile: any) => ({
+              ...profile,
+              avatar_url: profile.profile_photo_url,
+            }));
+          }
           (usersData || []).forEach((profile: any) => {
             if (profile.name) nameMap[profile.id] = profile.name;
             if (profile.avatar_url) avatarMap[profile.id] = profile.avatar_url;
@@ -436,7 +449,7 @@ export default function PassengerRequests() {
           if (packagePhotoColumnAvailableRef.current !== false) {
             const { data: profilesWithPhoto, error: profilePhotoError } = await supabase
               .from('orders')
-              .select('id, business_id, address, restaurant_package_photo_url')
+              .select('id, business_id, address, customer_name, restaurant_package_photo_url')
               .in('id', orderIds);
             if (profilePhotoError) {
               // The package-photo column is added by ADD_RESTAURANT_PACKAGE_PHOTO.sql.
@@ -446,7 +459,7 @@ export default function PassengerRequests() {
               }
               const { data: legacyProfiles } = await supabase
                 .from('orders')
-                .select('id, business_id, address')
+                .select('id, business_id, address, customer_name')
                 .in('id', orderIds);
               orderProfiles = legacyProfiles;
             } else {
@@ -457,7 +470,7 @@ export default function PassengerRequests() {
             // Avoid retrying a known-missing column on every request refresh.
             const { data: legacyProfiles } = await supabase
               .from('orders')
-              .select('id, business_id, address')
+              .select('id, business_id, address, customer_name')
               .in('id', orderIds);
             orderProfiles = legacyProfiles;
           }
@@ -505,7 +518,7 @@ export default function PassengerRequests() {
           payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
           amount: Number(req.amount || 0),
           foodCost: Number(req.food_cost || 0),
-          customerName: req.customer_name || nameMap[req.customer_id] || 'Customer',
+          customerName: req.customer_name || order?.customer_name || nameMap[req.customer_id] || 'Customer',
           customerAvatar: avatarMap[String(req.customer_id || '').split('_companion_')[0]] || null,
           restaurantName: requestType === 'delivery' ? restaurant?.name || 'Restaurant' : undefined,
           restaurantImage: restaurant?.logo_image || undefined,
@@ -1121,6 +1134,9 @@ export default function PassengerRequests() {
           status: 'accepted',
           driver_id: user.id,
           accepted_driver_id: user.id,
+          driver_name: user.name || 'Driver',
+          driver_photo: user.avatarUrl || null,
+          driver_plate: user.todaPlate || null,
         });
       }
     }

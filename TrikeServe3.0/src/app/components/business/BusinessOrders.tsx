@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Store, Package, ShoppingBag, Clock, User, CheckCircle, XCircle, AlertCircle, Navigation, MessageCircle, Loader2, Filter, ChevronDown, Search, X, Camera } from "lucide-react";
+import { Store, Package, ShoppingBag, Clock, User, Bike, Star, CheckCircle, XCircle, AlertCircle, Navigation, MessageCircle, Loader2, Filter, ChevronDown, Search, X, Camera } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -87,6 +87,9 @@ interface Order {
   customerId?: string;
   driverId?: string;
   driverName?: string;
+  driverPhoto?: string | null;
+  driverPlate?: string | null;
+  driverRating?: string | null;
   /**
    * A rider request exists for this order, but nobody has taken it yet.
    *
@@ -118,6 +121,7 @@ export default function BusinessOrders() {
   const { toggleChatOverlay } = useChatHeadVisibility();
   const [selectedTab, setSelectedTab] = useState<'active' | 'history'>('active');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [failedDriverPhotoUrl, setFailedDriverPhotoUrl] = useState<string | null>(null);
   const [incomingDriverChat, setIncomingDriverChat] = useState<{
     conversationId: string;
     peerId: string;
@@ -298,6 +302,9 @@ export default function BusinessOrders() {
       if (
         o.driverId === fresh.driverId &&
         o.driverName === fresh.driverName &&
+        o.driverPhoto === fresh.driverPhoto &&
+        o.driverPlate === fresh.driverPlate &&
+        o.driverRating === fresh.driverRating &&
         o.driverRequested === fresh.driverRequested &&
         o.driverStatus === fresh.driverStatus &&
         o.driverMessage === fresh.driverMessage &&
@@ -309,6 +316,9 @@ export default function BusinessOrders() {
         ...o,
         driverId: fresh.driverId,
         driverName: fresh.driverName,
+        driverPhoto: fresh.driverPhoto,
+        driverPlate: fresh.driverPlate,
+        driverRating: fresh.driverRating,
         driverRequested: fresh.driverRequested,
         driverStatus: fresh.driverStatus,
         driverMessage: fresh.driverMessage,
@@ -336,12 +346,38 @@ export default function BusinessOrders() {
   const [restaurantLocation, setRestaurantLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [driverStatus, setDriverStatus] = useState<string | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
-  const [etaToCustomer, setEtaToCustomer] = useState<string | null>(null);
+  const [etaToActiveStop, setEtaToActiveStop] = useState<string | null>(null);
+  const trackingMapRef = useRef<any>(null);
   const trackingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const trackingOrderIdRef = useRef<string | null>(null);
   // Refs so the realtime subscription can call the latest loadOrders without
   // re-subscribing on every render.
   const loadOrdersRef = useRef<(() => Promise<void>) | null>(null);
   const isUpdatingStatusRef = useRef(false);
+
+  const liveDriverStatus = driverStatus ?? selectedOrder?.driverStatus ?? null;
+  // An accepted driver may appear on the order before their first status update.
+  // Until that update arrives, the active leg is the trip to the restaurant.
+  const isRiderEnRouteToShop = liveDriverStatus
+    ? isRiderHeadingToRestaurant(liveDriverStatus)
+    : Boolean(selectedOrder?.driverId || selectedOrder?.driverName || selectedOrder?.status === 'on-the-way');
+  const normalizedDriverStatus = liveDriverStatus?.trim().toLowerCase().replace(/_/g, '-') ?? '';
+  const isDriverAtRestaurant = normalizedDriverStatus === 'arrived' || normalizedDriverStatus === 'at-restaurant';
+  const customerLocation = (() => {
+    const address = selectedOrder?.address || '';
+    const coordinates = address.includes('|') ? address.split('|').slice(1).join('|') : address;
+    const match = coordinates.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+    if (!match) return null;
+    const lat = Number(match[1]);
+    const lng = Number(match[2]);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  })();
+  const activeTrackingDestination = isRiderEnRouteToShop ? restaurantLocation : customerLocation;
+  const hasAssignedDriver = Boolean(selectedOrder?.driverId || selectedOrder?.driverName || driverLocation);
+  const showActiveDeliveryMap = Boolean(
+    selectedOrder?.deliveryMode === 'delivery' &&
+    (selectedOrder.status === 'on-the-way' || (selectedOrder.status === 'confirmed' && hasAssignedDriver)),
+  );
 
   useEffect(() => {
     if (!packagePhotoFile) {
@@ -391,6 +427,15 @@ export default function BusinessOrders() {
    * "on-the-way" value that says nothing about which leg the rider is on.
    */
   useEffect(() => {
+    if (trackingOrderIdRef.current !== (selectedOrder?.id ?? null)) {
+      trackingOrderIdRef.current = selectedOrder?.id ?? null;
+      setDriverLocation(null);
+      setRestaurantLocation(null);
+      setDriverStatus(null);
+      setRoutePath([]);
+      setEtaToActiveStop(null);
+    }
+
     const hasRider = !!selectedOrder && ['confirmed', 'on-the-way', 'delivered'].includes(selectedOrder.status);
 
     if (!hasRider) {
@@ -436,7 +481,7 @@ export default function BusinessOrders() {
         // have driver_lat/lng columns.
         const { data: freshRide } = await supabase
           .from('ride_requests')
-          .select('driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
+          .select('driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng, accepted_driver_id, driver_name, driver_photo, driver_plate, driver_rating')
           .eq('order_id', selectedOrder.id)
           .order('updated_at', { ascending: false })
           .limit(1)
@@ -444,6 +489,28 @@ export default function BusinessOrders() {
 
         if (freshRide?.driver_lat && freshRide?.driver_lng) {
           setDriverLocation({ lat: freshRide.driver_lat, lng: freshRide.driver_lng });
+        }
+        if (freshRide) {
+          setSelectedOrder((current) => {
+            if (!current || current.id !== selectedOrder.id) return current;
+            const nextDriver = {
+              driverId: freshRide.accepted_driver_id || current.driverId,
+              driverName: freshRide.driver_name || current.driverName,
+              driverPhoto: freshRide.driver_photo || current.driverPhoto,
+              driverPlate: freshRide.driver_plate || current.driverPlate,
+              driverRating: freshRide.driver_rating || current.driverRating,
+              driverRequested: true,
+            };
+            if (
+              current.driverId === nextDriver.driverId &&
+              current.driverName === nextDriver.driverName &&
+              current.driverPhoto === nextDriver.driverPhoto &&
+              current.driverPlate === nextDriver.driverPlate &&
+              current.driverRating === nextDriver.driverRating &&
+              current.driverRequested === nextDriver.driverRequested
+            ) return current;
+            return { ...current, ...nextDriver };
+          });
         }
         if (freshRide?.driver_status) setDriverStatus(freshRide.driver_status);
         const pickupLat = Number(freshRide?.pickup_lat);
@@ -483,38 +550,68 @@ export default function BusinessOrders() {
     return unsubscribe;
   }, [selectedOrder?.id, selectedOrder?.status]);
 
-  // Compute route from driver to restaurant or customer
+  // Some older orders only have a written restaurant address. Resolve it once
+  // when the rider is on the pickup leg and the ride request has no pinned point.
   useEffect(() => {
-    if (!driverLocation || !isMapsLoaded || !(window as any).google) {
-      setRoutePath([]);
-      return;
-    }
+    if (!isRiderEnRouteToShop || restaurantLocation || !selectedOrder?.restaurantAddress || !isMapsLoaded) return;
+    let active = true;
+    void geocodeAddress(selectedOrder.restaurantAddress).then((location) => {
+      if (active && location) setRestaurantLocation(location);
+    });
+    return () => { active = false; };
+  }, [isRiderEnRouteToShop, restaurantLocation, selectedOrder?.id, selectedOrder?.restaurantAddress, isMapsLoaded]);
 
-    // Parse customer delivery coordinates from order address (format: "name|lat,lng")
-    const addr = selectedOrder?.address || '';
-    const coordPart = addr.includes('|') ? addr.split('|')[1] : addr;
-    const m = coordPart.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
-    if (!m) { setRoutePath([]); return; }
-    const dest = { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+  // Follow the active leg: the restaurant before pickup, then the customer.
+  useEffect(() => {
+    let active = true;
+    setRoutePath([]);
+    setEtaToActiveStop(null);
+    if (isDriverAtRestaurant && isRiderEnRouteToShop) {
+      return () => { active = false; };
+    }
+    if (!driverLocation || !activeTrackingDestination || !isMapsLoaded || !(window as any).google) {
+      return () => { active = false; };
+    }
 
     const DirectionsService = new (window as any).google.maps.DirectionsService();
     DirectionsService.route({
       origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
-      destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
+      destination: new (window as any).google.maps.LatLng(activeTrackingDestination.lat, activeTrackingDestination.lng),
       travelMode: (window as any).google.maps.TravelMode.DRIVING,
     }, (result: any, status: string) => {
-      if (status === 'OK' && result?.routes?.[0]) {
-        const route = result.routes[0];
-        if (route.overview_polyline?.points) {
-          setRoutePath(decodePolyline(route.overview_polyline.points));
-        }
-        const leg = route.legs?.[0];
-        if (leg?.duration?.text) {
-          setEtaToCustomer(leg.duration.text);
-        }
-      }
+      if (!active) return;
+      const route = status === 'OK' ? result?.routes?.[0] : null;
+      if (!route) return;
+
+      // Google can omit the overview geometry while still returning step paths.
+      const overviewPoints = route.overview_polyline?.points;
+      const stepPath = (route.legs || []).flatMap((leg: any) =>
+        (leg.steps || []).flatMap((step: any) =>
+          step.polyline?.points ? decodePolyline(step.polyline.points) : [],
+        ),
+      );
+      const path = overviewPoints ? decodePolyline(overviewPoints) : stepPath;
+      setRoutePath(path);
+
+      const leg = route.legs?.[0];
+      setEtaToActiveStop(leg?.duration?.text || null);
     });
-  }, [driverLocation, isMapsLoaded, driverStatus, selectedOrder?.address]);
+
+    return () => { active = false; };
+  }, [driverLocation, activeTrackingDestination?.lat, activeTrackingDestination?.lng, isMapsLoaded, isDriverAtRestaurant, isRiderEnRouteToShop]);
+
+  // Keep both ends of the currently active route in view as the driver moves.
+  useEffect(() => {
+    const map = trackingMapRef.current;
+    const maps = (window as any).google?.maps;
+    if (!map || !maps?.LatLngBounds || !driverLocation || !activeTrackingDestination) return;
+
+    const bounds = new maps.LatLngBounds();
+    bounds.extend(driverLocation);
+    bounds.extend(activeTrackingDestination);
+    routePath.forEach((point) => bounds.extend(point));
+    map.fitBounds(bounds, 28);
+  }, [driverLocation, activeTrackingDestination?.lat, activeTrackingDestination?.lng, routePath]);
 
   const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
     const points: Array<{ lat: number; lng: number }> = [];
@@ -667,6 +764,7 @@ export default function BusinessOrders() {
           console.error('[BusinessOrders] Error parsing items JSON for order', dbOrder.order_number, parseError);
           parsedItems = [];
         }
+        const orderAlreadyPickedUp = ['picked_up', 'picked-up'].includes(String(dbOrder.status || '').toLowerCase());
 
         return {
           id: dbOrder.id,
@@ -679,7 +777,10 @@ export default function BusinessOrders() {
           items: parsedItems,
           total: dbOrder.total || 0,
           subtotal: dbOrder.subtotal || 0,
-          status: dbOrder.status || 'pending',
+          // Retain the shop's existing in-transit UI state while keeping the
+          // pickup milestone if ride_requests is briefly behind the order row.
+          status: orderAlreadyPickedUp ? 'on-the-way' : dbOrder.status || 'pending',
+          driverStatus: orderAlreadyPickedUp ? 'picked-up' : null,
           paymentMethod: 'gcash',
           paymentProofUrl: dbOrder.payment_proof_url ?? null,
           paymentProofUploadedAt: dbOrder.payment_proof_uploaded_at ?? null,
@@ -731,7 +832,7 @@ export default function BusinessOrders() {
          */
         const { data: rideReqs } = await supabase
           .from('ride_requests')
-          .select('order_id, driver_status, driver_name, accepted_driver_id')
+          .select('order_id, driver_status, driver_status_message, driver_name, driver_photo, driver_plate, driver_rating, accepted_driver_id')
           .in('order_id', orderIds);
 
         if (rideReqs) {
@@ -750,8 +851,15 @@ export default function BusinessOrders() {
             if (rr.driver_name) {
               order.driverName = rr.driver_name;
             }
+            if (rr.driver_photo) order.driverPhoto = rr.driver_photo;
+            if (rr.driver_plate) order.driverPlate = rr.driver_plate;
+            if (rr.driver_rating) order.driverRating = String(rr.driver_rating);
 
             if (!rr.driver_status) return;
+            const incomingDriverStatus = String(rr.driver_status).toLowerCase().replace(/_/g, '-');
+            const orderAlreadyRecordsPickup = order.driverStatus === 'picked-up';
+            const rideRequestIsBeforePickup = ['pending', 'assigned', 'accepted', 'on-the-way', 'arrived'].includes(incomingDriverStatus);
+            if (orderAlreadyRecordsPickup && rideRequestIsBeforePickup) return;
             // Keep the raw rider phase on the order so the progress track can show
             // it. `status` alone flattens "heading to the shop", "waiting at the
             // shop", "driving over" and "at the door" into `on-the-way`.
@@ -1529,11 +1637,6 @@ export default function BusinessOrders() {
       })
     : null;
 
-  // Which leg of the trip the rider is on. The old inline check listed
-  // `accepted`, `on-the-way` and `arrived` but not `picked-up`, so the route line
-  // flipped colour at the wrong moment.
-  const isRiderEnRouteToShop = isRiderHeadingToRestaurant(driverStatus ?? selectedOrder?.driverStatus);
-
   const statusFilterOptions: Array<{ value: 'all' | ActiveOrderStatusFilter; label: string }> = [
     { value: 'all', label: `All (${activeOrders.length})` },
     { value: 'pending', label: `Awaiting Payment (${activeOrders.filter(order => order.status === 'pending').length})` },
@@ -2184,99 +2287,133 @@ export default function BusinessOrders() {
                         <p className="text-[11px] font-bold uppercase tracking-widest text-[var(--success-ink)]">
                           Driver assigned
                         </p>
-                        <p className="mt-1 font-bold text-[var(--ink)]">{selectedOrder.driverName}</p>
-                        {progress?.currentTitle && progress.currentStepIsRiderStep && (
-                          <p className="mt-1 text-xs text-[var(--success-ink)]">{progress.currentTitle}</p>
-                        )}
-                        {progress?.riderMessage && (
-                          <p className="mt-1 text-xs text-[var(--success-ink)]">&ldquo;{progress.riderMessage}&rdquo;</p>
+                        <div className="mt-3 flex min-w-0 items-center gap-3">
+                          <div className="relative grid size-14 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--success)]/30 bg-white text-base font-bold text-[var(--success-ink)]">
+                            {selectedOrder.driverName
+                              .split(/\s+/)
+                              .filter(Boolean)
+                              .slice(0, 2)
+                              .map((part) => part[0])
+                              .join('')
+                              .toUpperCase() || <User className="size-6" aria-hidden="true" />}
+                            {selectedOrder.driverPhoto && (
+                              <img
+                                src={selectedOrder.driverPhoto}
+                                alt={`${selectedOrder.driverName}'s profile`}
+                                className={`absolute inset-0 size-full object-cover ${failedDriverPhotoUrl === selectedOrder.driverPhoto ? 'hidden' : ''}`}
+                                onError={() => setFailedDriverPhotoUrl(selectedOrder.driverPhoto || null)}
+                              />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-bold text-[var(--ink)]">{selectedOrder.driverName}</p>
+                            <p className="mt-0.5 text-xs text-[var(--success-ink)]">Driver assigned to collect your order</p>
+                            {progress?.currentTitle && progress.currentStepIsRiderStep && (
+                              <p className="mt-1 text-xs font-medium text-[var(--success-ink)]">{progress.currentTitle}</p>
+                            )}
+                            {progress?.riderMessage && (
+                              <p className="mt-1 text-xs text-[var(--success-ink)]">&ldquo;{progress.riderMessage}&rdquo;</p>
+                            )}
+                          </div>
+                        </div>
+                        {((selectedOrder.driverPlate && selectedOrder.driverPlate !== 'N/A') || selectedOrder.driverRating) && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {selectedOrder.driverPlate && selectedOrder.driverPlate !== 'N/A' && (
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/25 bg-white/70 px-2.5 py-1 text-xs font-semibold text-[var(--success-ink)]">
+                                <Bike className="size-3.5" aria-hidden="true" />
+                                TODA plate: {selectedOrder.driverPlate}
+                              </span>
+                            )}
+                            {selectedOrder.driverRating && Number.isFinite(Number(selectedOrder.driverRating)) && (
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/25 bg-white/70 px-2.5 py-1 text-xs font-semibold text-[var(--success-ink)]">
+                                <Star className="size-3.5 fill-current" aria-hidden="true" />
+                                {Number(selectedOrder.driverRating).toFixed(1)} rating
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     ) : null}
                   </div>
                 )}
 
-                {selectedOrder.status === 'on-the-way' && (
-                  <div className="space-y-3">
-                    {/* Live Tracking Map */}
-                    {isMapsLoaded && driverLocation && (
-                      <div className="rounded-xl overflow-hidden border-2 border-[var(--info)]">
+                {showActiveDeliveryMap && (
+                  <div className="rounded-xl overflow-hidden border-2 border-[var(--info)]">
+                    {isMapsLoaded && driverLocation ? (
+                      <>
                         <div className="bg-gradient-to-r from-[var(--info)] to-[var(--info)] px-3 py-2 flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
-                            <span className="text-xs font-bold text-white">Live Tracking</span>
+                            <span className="text-xs font-bold text-white">Live Delivery Tracking</span>
                           </div>
                           <Navigation className="w-3.5 h-3.5 text-white/80" />
                         </div>
                         <GoogleMap
                           mapContainerStyle={{ width: '100%', height: '200px' }}
-                          center={driverLocation}
-                          zoom={15}
+                          defaultCenter={driverLocation}
+                          defaultZoom={13}
                           options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'none' }}
+                          onLoad={(map) => {
+                            trackingMapRef.current = map;
+                            const maps = (window as any).google?.maps;
+                            if (maps?.LatLngBounds && activeTrackingDestination) {
+                              const bounds = new maps.LatLngBounds();
+                              bounds.extend(driverLocation);
+                              bounds.extend(activeTrackingDestination);
+                              map.fitBounds(bounds, 28);
+                            }
+                          }}
+                          onUnmount={() => { trackingMapRef.current = null; }}
                         >
                           <MapTypeToggle />
-                          {restaurantLocation && (
-                            <MarkerF position={restaurantLocation} title="Restaurant" icon={createRestaurantMarkerIcon()} />
-                          )}
                           <MarkerF
                             position={driverLocation}
                             title="Driver"
                             icon={createTricycleMarkerIcon()}
                           />
-                          {(() => {
-                            const addr = selectedOrder?.address || '';
-                            const cp = addr.includes('|') ? addr.split('|')[1] : addr;
-                            const cm = cp.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
-                            if (!cm) return null;
-                            return (
-                            <MarkerF
-                              position={{ lat: parseFloat(cm[1]), lng: parseFloat(cm[2]) }}
-                              title="Customer"
-                              icon={createDropoffMarkerIcon({ size: 32 })}
-                            />
-                            );
-                          })()}
+                          {activeTrackingDestination && (isRiderEnRouteToShop ? (
+                            <MarkerF position={activeTrackingDestination} title="Restaurant" icon={createRestaurantMarkerIcon()} />
+                          ) : (
+                            <MarkerF position={activeTrackingDestination} title="Customer" icon={createDropoffMarkerIcon({ size: 32 })} />
+                          ))}
                           {routePath.length > 0 && (
                             <Polyline
                               path={routePath}
                               options={{
-                                  /* Green while the rider is still on the way to the
-                                     shop, a different colour once they are carrying
-                                     the order, so the route line tells you which leg
-                                     it is. */
-                                  strokeColor: isRiderEnRouteToShop ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
-                                  strokeOpacity: 0.9,
-                                  strokeWeight: 4,
-                                  geodesic: true,
-                                }}
+                                strokeColor: isRiderEnRouteToShop ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
+                                strokeOpacity: 0.9,
+                                strokeWeight: 4,
+                                geodesic: true,
+                              }}
                             />
                           )}
                         </GoogleMap>
                         <div className="px-3 py-2 bg-surface border-t border-[var(--border)] flex items-center justify-between">
                           <span className="text-xs font-semibold text-[var(--ink)]">
-                            {/* Reuses the track's own wording so the map caption
-                                cannot disagree with the stepper above it. */}
-                            {isRiderEnRouteToShop ? '🟢 Heading to restaurant' : '🔴 Delivering to customer'}
+                            {!activeTrackingDestination
+                              ? (isRiderEnRouteToShop ? 'Restaurant location unavailable' : 'Customer location unavailable')
+                              : isDriverAtRestaurant
+                                ? 'Driver arrived at restaurant'
+                                : isRiderEnRouteToShop ? 'Heading to restaurant' : 'Delivering to customer'}
                           </span>
-                          <div className="flex items-center gap-2">
-                            {etaToCustomer && (
-                              <span className="text-[10px] font-bold text-[var(--info)] bg-[var(--info-soft)] px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
-                            )}
-                            {selectedOrder?.customerName && (
-                              <span className="text-[10px] text-[var(--muted-foreground)]">{selectedOrder.customerName}</span>
-                            )}
-                          </div>
+                          {etaToActiveStop && (
+                            <span className="text-[10px] font-bold text-[var(--info)] bg-[var(--info-soft)] px-2 py-0.5 rounded-full">
+                              ETA {etaToActiveStop}
+                            </span>
+                          )}
                         </div>
-                      </div>
-                    )}
-
-                    {isMapsLoaded && !driverLocation && (
-                      <div className="rounded-xl border-2 border-dashed border-[var(--border)] p-4 text-center">
+                      </>
+                    ) : (
+                      <div className="p-4 text-center">
                         <p className="text-sm font-semibold text-[var(--ink)]">Waiting for the driver's location…</p>
-                        <p className="text-xs text-[var(--muted-foreground)] mt-1">Live tracking appears once the driver shares GPS.</p>
+                        <p className="text-xs text-[var(--muted-foreground)] mt-1">Live route appears when the driver shares GPS.</p>
                       </div>
                     )}
+                  </div>
+                )}
 
+                {selectedOrder.status === 'on-the-way' && (
+                  <div className="space-y-3">
                     <div className="bg-[var(--amber-soft)] border-l-4 border-[var(--amber)] p-2 md:p-3 rounded text-sm">
                       <p className="font-semibold text-[var(--amber-ink)]">
                         {progress?.currentTitle ?? getStatusLabel(selectedOrder.status)}

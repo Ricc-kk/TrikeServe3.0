@@ -62,6 +62,7 @@ interface ActiveRideData {
   type: 'delivery' | 'shared' | 'private';
   customerName: string;
   customerPhoto: string;
+  customerAvatar?: string | null;
   pickup: string;
   dropoff: string;
   pickupLat?: number;
@@ -221,6 +222,10 @@ function getSharedPassengerName(passenger: any, index: number, passengers: any[]
 
 function firstNameOnly(name: unknown): string {
   return String(name || '').trim().split(/\s+/)[0] || '';
+}
+
+function isProfileImageSource(value: unknown): value is string {
+  return typeof value === 'string' && (/^https?:\/\//i.test(value) || value.startsWith('data:image/'));
 }
 
 function getSharedPassengerDropoff(passenger: any, index: number, ride: ActiveRideData): string {
@@ -565,6 +570,8 @@ export default function ActiveRide() {
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
+  const [pickupOrderStatusError, setPickupOrderStatusError] = useState<string | null>(null);
+  const [isSavingPickupOrderStatus, setIsSavingPickupOrderStatus] = useState(false);
   useEffect(() => {
     if (!imageProofRequired) {
       setShowProofSheet(false);
@@ -722,15 +729,46 @@ export default function ActiveRide() {
     };
   }, [rideData?.terminalId, user?.terminalId]);
 
-  // Resolve customer name from the users table if it's missing or generic
+  // Resolve customer name from the order first for delivery rides, then from
+  // the user profile. Ride requests themselves do not always carry a name.
   useEffect(() => {
-    if (!rideData || (rideData.customerName && rideData.customerName !== 'Customer')) return;
-    const cid = rideData.customerId;
-    if (!cid) return;
-    supabase.from('users').select('name').eq('id', cid).single()
-      .then(({ data }) => { if (data?.name) setResolvedName(data.name); })
-      .catch(() => {});
-  }, [rideData?.customerId, rideData?.customerName]);
+    if (!rideData) {
+      setResolvedName(null);
+      return;
+    }
+    const suppliedName = rideData.customerName?.trim();
+    if (suppliedName && suppliedName !== 'Customer') {
+      setResolvedName(suppliedName);
+      return;
+    }
+
+    setResolvedName(null);
+    let active = true;
+    const resolveCustomerName = async () => {
+      if (rideData.orderId) {
+        const { data: order } = await supabase
+          .from('orders')
+          .select('customer_name')
+          .eq('id', rideData.orderId)
+          .maybeSingle();
+        if (active && order?.customer_name) {
+          setResolvedName(order.customer_name);
+          return;
+        }
+      }
+
+      if (!rideData.customerId) return;
+      const { data: profile } = await supabase
+        .from('users')
+        .select('name')
+        .eq('id', rideData.customerId)
+        .maybeSingle();
+      if (active && profile?.name) setResolvedName(profile.name);
+    };
+
+    void resolveCustomerName().catch(() => {});
+    return () => { active = false; };
+  }, [rideData?.orderId, rideData?.customerId, rideData?.customerName]);
 
   /**
    * The passenger's profile photo.
@@ -912,28 +950,48 @@ export default function ActiveRide() {
       setPassengerAvatars({});
       return;
     }
-    setPassengerAvatar(null);
+    setPassengerAvatar(
+      isProfileImageSource(rideData?.customerAvatar)
+        ? rideData.customerAvatar
+        : isProfileImageSource(rideData?.customerPhoto) ? rideData.customerPhoto : null,
+    );
     setPassengerAvatars({});
     let active = true;
-    supabase.from('users').select('id, avatar_url').in('id', profileIds)
-      .then(({ data }) => {
-        if (!active) return;
-        const avatars = Object.fromEntries(
-          (data || [])
-            .filter((profile: any) => profile?.id && profile?.avatar_url)
-            .map((profile: any) => [String(profile.id), String(profile.avatar_url)]),
-        ) as Record<string, string>;
-        const primaryId = passengerAccountId(rideData?.customerId || passengerDetails[0]?.id);
-        setPassengerAvatars(avatars);
-        setPassengerAvatar(avatars[primaryId] || null);
-      })
-      .catch(() => {
-        if (!active) return;
-        setPassengerAvatar(null);
-        setPassengerAvatars({});
-      });
+    const loadPassengerProfiles = async () => {
+      let { data, error } = await supabase
+        .from('users')
+        .select('id, avatar_url')
+        .in('id', profileIds);
+      if (error) {
+        const legacyProfiles = await supabase
+          .from('users')
+          .select('id, profile_photo_url')
+          .in('id', profileIds);
+        data = (legacyProfiles.data || []).map((profile: any) => ({
+          ...profile,
+          avatar_url: profile.profile_photo_url,
+        }));
+      }
+      if (!active) return;
+      const avatars = Object.fromEntries(
+        (data || [])
+          .filter((profile: any) => profile?.id && profile?.avatar_url)
+          .map((profile: any) => [String(profile.id), String(profile.avatar_url)]),
+      ) as Record<string, string>;
+      const primaryId = passengerAccountId(rideData?.customerId || passengerDetails[0]?.id);
+      const suppliedAvatar = isProfileImageSource(rideData?.customerAvatar)
+        ? rideData.customerAvatar
+        : isProfileImageSource(rideData?.customerPhoto) ? rideData.customerPhoto : null;
+      setPassengerAvatars(avatars);
+      setPassengerAvatar(avatars[primaryId] || suppliedAvatar);
+    };
+    void loadPassengerProfiles().catch(() => {
+      if (!active) return;
+      setPassengerAvatar(null);
+      setPassengerAvatars({});
+    });
     return () => { active = false; };
-  }, [rideData?.customerId, rideData?.passengerDetails]);
+  }, [rideData?.customerId, rideData?.customerAvatar, rideData?.customerPhoto, rideData?.passengerDetails]);
 
   /*
    * The `center` prop is only meaningful before the map exists.
@@ -1927,6 +1985,25 @@ export default function ActiveRide() {
     }
   };
 
+  const markDeliveryOrderPickedUp = async (ride: ActiveRideData) => {
+    if (!ride.orderId && !ride.orderNumber) {
+      setPickupOrderStatusError('Could not identify this delivery order. Reopen the delivery and try again.');
+      return;
+    }
+
+    setPickupOrderStatusError(null);
+    setIsSavingPickupOrderStatus(true);
+    try {
+      const { error } = await supabaseHelpers.markDeliveryOrderPickedUp(ride.orderId, ride.orderNumber);
+      if (error) throw error;
+    } catch (error) {
+      console.error('[ActiveRide] Could not mark delivery order as picked up:', error);
+      setPickupOrderStatusError('The customer order status could not be updated. Retry to sync it.');
+    } finally {
+      setIsSavingPickupOrderStatus(false);
+    }
+  };
+
   const updateStatus = (newStatus: RideStatus) => {
     if (!rideData) return;
     const updated = { ...rideData, status: newStatus };
@@ -1962,21 +2039,10 @@ export default function ActiveRide() {
       notifyDeliveryStatus(rideData, dbMap[newStatus], messageMap[newStatus]);
       if (!waitsForPassengerDropoff) void notifyRideProgress(rideData, dbMap[newStatus]);
 
-      /*
-       * Accepting no longer moves the order itself -- it only records the rider,
-       * so the shop can sit in a real "rider assigned" state instead of going
-       * from searching for one straight to a delivery already under way. That makes
-       * this the point where the food is genuinely in the rider's hands and the
-       * delivery starts, so the order moves now.
-       *
-       * `arrived` is deliberately not included: the rider reaching the shop is
-       * still the "assigned / heading to the restaurant" phase, and flipping to
-       * on-the-way at the door would announce a delivery that has not left yet.
-       */
-      if (newStatus === 'pickup' && (rideData.orderId || rideData.orderNumber)) {
-        supabaseHelpers
-          .updateDeliveryOrderStatus(rideData.orderId, rideData.orderNumber, 'on-the-way')
-          .catch(() => {});
+      // Record pickup as its own order state so the customer timeline can advance
+      // even if the separate ride_requests status update arrives late.
+      if (newStatus === 'pickup' && isDeliveryRide(rideData)) {
+        void markDeliveryOrderPickedUp(rideData);
       }
     }
   };
@@ -2504,6 +2570,9 @@ export default function ActiveRide() {
 
   if (!rideData) return null;
   const customerDisplayName = firstNameOnly(resolvedName || rideData.customerName) || 'Passenger';
+  const customerProfilePhoto = passengerAvatar
+    || (isProfileImageSource(rideData.customerAvatar) ? rideData.customerAvatar : null)
+    || (isProfileImageSource(rideData.customerPhoto) ? rideData.customerPhoto : null);
   const privatePassengerId = String(rideData.customerId || rideData.passengerDetails?.[0]?.id || '');
   const privatePassengerReportTarget = privatePassengerId
     ? { id: privatePassengerId, name: customerDisplayName }
@@ -2541,7 +2610,7 @@ export default function ActiveRide() {
   const sharedPaymentAvatar = sharedPaymentPassenger?.avatar;
   const sharedPaymentPassengerPhoto = passengerAvatars[passengerAccountId(sharedPaymentPassengerId)]
     || (typeof sharedPaymentAvatar === 'string' && (/^https?:\/\//i.test(sharedPaymentAvatar) || sharedPaymentAvatar.startsWith('data:image/')) ? sharedPaymentAvatar : null);
-  const paymentPassengerPhoto = isSharedRide ? sharedPaymentPassengerPhoto : passengerAvatar;
+  const paymentPassengerPhoto = isSharedRide ? sharedPaymentPassengerPhoto : customerProfilePhoto;
   const sharedPaymentPassengerFare = sharedPaymentPassenger
     ? Number(sharedPaymentPassenger.fare ?? rideData.amount ?? 0)
     : 0;
@@ -3244,9 +3313,9 @@ export default function ActiveRide() {
               </div>
             ) : (
               <div className="size-11 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center text-lg font-bold text-[var(--primary)]">
-                {passengerAvatar ? (
+                {customerProfilePhoto ? (
                   <img
-                    src={passengerAvatar}
+                    src={customerProfilePhoto}
                     alt={`${customerDisplayName}'s profile`}
                     className="w-full h-full object-cover"
                   />
@@ -3302,9 +3371,9 @@ export default function ActiveRide() {
               <div className={`flex items-start gap-4 ${isSharedRide ? 'mb-0' : 'mb-3'}`}>
                 {!isSharedRide && (
                   <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center text-xl font-bold text-[var(--primary)]">
-                    {passengerAvatar ? (
+                    {customerProfilePhoto ? (
                       <img
-                        src={passengerAvatar}
+                        src={customerProfilePhoto}
                         alt={`${customerDisplayName}'s profile`}
                         className="w-full h-full object-cover"
                       />
@@ -3411,8 +3480,8 @@ export default function ActiveRide() {
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex min-w-0 items-center gap-1.5">
                         <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-semibold text-[var(--primary)]">
-                          {passengerAvatar ? (
-                            <img src={passengerAvatar} alt={`${customerDisplayName}'s profile`} className="size-full object-cover" />
+                          {customerProfilePhoto ? (
+                            <img src={customerProfilePhoto} alt={`${customerDisplayName}'s profile`} className="size-full object-cover" />
                           ) : (
                             getProfileInitials(customerDisplayName)
                           )}
@@ -3524,8 +3593,21 @@ export default function ActiveRide() {
             {isDeliveryRide(rideData) && (
               <RideSurfaceCard className="gap-0 border-2 border-[var(--muted)] p-4">
                 <h3 className="text-center font-bold text-[var(--ink)] text-sm mb-3">Order Progress</h3>
+                {pickupOrderStatusError && (
+                  <div role="alert" className="mb-3 rounded-xl border border-[var(--error)]/30 bg-[var(--error-soft)] p-3 text-sm text-[var(--error)]">
+                    <p>{pickupOrderStatusError}</p>
+                    <button
+                      type="button"
+                      onClick={() => void markDeliveryOrderPickedUp(rideData)}
+                      disabled={isSavingPickupOrderStatus}
+                      className="mt-2 font-bold underline disabled:opacity-60"
+                    >
+                      {isSavingPickupOrderStatus ? 'Syncing…' : 'Retry order update'}
+                    </button>
+                  </div>
+                )}
                 <OrderStatusUpdates
-                  status="preparing"
+                  status={['pickup', 'drop-off', 'payment'].includes(rideData.status) ? 'picked_up' : 'preparing'}
                   driverStatus={driverProgressStatus[rideData.status]}
                   deliveryMode="delivery"
                 />

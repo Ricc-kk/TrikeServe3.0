@@ -124,6 +124,7 @@ const statusColors: Record<string, string> = {
   'ready': 'bg-[var(--success)] text-white',
   'confirmed': 'bg-[var(--info)] text-white',
   'on-the-way': 'bg-[var(--info)] text-white',
+  'picked_up': 'bg-[var(--info)] text-white',
   'delivered': 'bg-[var(--success)] text-white',
   'cancelled': 'bg-[var(--error)] text-white',
 };
@@ -142,6 +143,7 @@ const statusLabels: Record<string, string> = {
   'ready': 'Ready for Pickup',
   'confirmed': 'Driver Assigned',
   'on-the-way': 'On the Way',
+  'picked_up': 'Order picked up',
   'delivered': 'Delivered',
   'cancelled': 'Cancelled',
 };
