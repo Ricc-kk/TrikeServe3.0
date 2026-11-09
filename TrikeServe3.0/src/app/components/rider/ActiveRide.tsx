@@ -1427,14 +1427,23 @@ export default function ActiveRide() {
       return;
     }
 
-    const pickup = coordinateFromValues(rideData.pickupLat, rideData.pickupLng) || driverLocation;
-    if (!pickup || sharedDropoffStops.length === 0 || !sharedTerminalRoute) {
+    const terminal = coordinateFromValues(rideData.pickupLat, rideData.pickupLng);
+    // While approaching the terminal, the separate live road route connects the
+    // tricycle to this terminal anchor. Once the ride is underway, continue the
+    // selected terminal road from the driver's current position so the planned
+    // route stays connected to the moving tricycle instead of restarting at the
+    // terminal on every screen restore.
+    const routeOrigin = !isHeadingToPickup && driverLocation
+      ? driverLocation
+      : terminal || driverLocation;
+    if (!routeOrigin || sharedDropoffStops.length === 0 || !sharedTerminalRoute) {
       setSharedDropoffRoutes([]);
       return;
     }
-    setSharedDropoffRoutes(buildSharedDropoffRoutes(pickup, sharedDropoffStops, sharedTerminalRoute));
+    setSharedDropoffRoutes(buildSharedDropoffRoutes(routeOrigin, sharedDropoffStops, sharedTerminalRoute));
   }, [
     isSharedRide,
+    isHeadingToPickup,
     rideData?.id,
     rideData?.pickupLat,
     rideData?.pickupLng,
