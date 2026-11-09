@@ -1011,6 +1011,17 @@ export default function OrderDetail() {
       </div>
 
       <div className="px-4 md:px-5 pt-4 space-y-4 md:space-y-5">
+        {/* Status Timeline — the same track as the stepper above, spelled out */}
+        <Card className="p-4 md:p-5 border border-line">
+          <h3 className="text-center font-bold text-[var(--ink)] text-sm md:text-base mb-3">Order Progress</h3>
+          <OrderStatusUpdates
+            status={order.status}
+            driverStatus={order.driverStatus}
+            deliveryMode={order.deliveryMode}
+            audience="customer"
+          />
+        </Card>
+
         {/* Live Map */}
         {isActiveDelivery && isMapsLoaded && driverLocation && (
           <Card className="border-2 border-[var(--info)] overflow-hidden">
@@ -1120,17 +1131,6 @@ export default function OrderDetail() {
             <p className="text-xs text-[var(--muted-foreground)] mt-1">Live tracking appears once the driver shares GPS.</p>
           </Card>
         )}
-
-        {/* Status Timeline — the same track as the stepper above, spelled out */}
-        <Card className="p-4 md:p-5 border border-line">
-          <h3 className="text-center font-bold text-[var(--ink)] text-sm md:text-base mb-3">Order Progress</h3>
-          <OrderStatusUpdates
-            status={order.status}
-            driverStatus={order.driverStatus}
-            deliveryMode={order.deliveryMode}
-            audience="customer"
-          />
-        </Card>
 
         {/* Why the order was cancelled, so the customer sees the reason */}
         {order.status === 'cancelled' && order.cancelReason && (

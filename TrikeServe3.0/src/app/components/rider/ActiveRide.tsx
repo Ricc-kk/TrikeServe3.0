@@ -632,12 +632,27 @@ export default function ActiveRide() {
 
   useEffect(() => {
     if (location.state?.acceptedRide) {
-      const ride = { ...location.state.acceptedRide, status: 'on-the-way' as RideStatus };
+      if (!user?.id) return;
+      const acceptedRide = location.state.acceptedRide;
+      const savedRide = readRiderActiveRide();
+      const savedRideMatches = Boolean(
+        savedRide
+        && (acceptedRide.lobbyId
+          ? savedRide.lobbyId === acceptedRide.lobbyId
+          : savedRide.id === acceptedRide.id)
+        && (!savedRide.driverId || !user?.id || savedRide.driverId === user.id),
+      );
+      // React Router keeps location state across a browser reload. Reuse this
+      // driver's saved phase for the same ride instead of replaying acceptance
+      // and pushing the ride back to its first step.
+      const ride = savedRideMatches
+        ? { ...acceptedRide, ...savedRide }
+        : { ...acceptedRide, status: 'on-the-way' as RideStatus };
       setRideData(ride);
       writeRiderActiveRide(ride);
       // Shared-ride lobbies are accepted in PassengerRequests (acceptLobbyAsDriver),
       // so skip the ride_requests calls which only apply to private/delivery rides.
-      if (ride.id && user?.id) {
+      if (!savedRideMatches && ride.id && user?.id) {
         if (ride.lobbyId) {
           // Shared-ride lobbies are accepted in PassengerRequests (acceptLobbyAsDriver);
           // here we only need to track the driver's progress on the lobby so customers
