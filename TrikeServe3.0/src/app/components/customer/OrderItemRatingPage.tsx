@@ -66,6 +66,7 @@ export default function OrderItemRatingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [showThankYou, setShowThankYou] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -76,6 +77,8 @@ export default function OrderItemRatingPage() {
     setOrder(null);
     setRatings({});
     setSavedRatings({});
+    setSaved(false);
+    setShowThankYou(false);
 
     if (!orderId || !user?.id) {
       setPageError("This order could not be opened.");
@@ -245,6 +248,7 @@ export default function OrderItemRatingPage() {
         ...Object.fromEntries(ratingsToSave.map((row) => [row.order_item_index, row.rating])),
       }));
       setSaved(true);
+      setShowThankYou(true);
     } catch (error) {
       console.error("[OrderItemRatingPage] Could not save item ratings:", error);
       setSaveError("Could not save your ratings. Please try again.");
@@ -296,8 +300,8 @@ export default function OrderItemRatingPage() {
                   const selectedRating = ratings[item.index] || 0;
                   const isSaved = selectedRating > 0 && savedRatings[item.index] === selectedRating;
                   return (
-                    <Card key={`${item.id || item.name}-${item.index}`} className="flex items-center justify-between gap-3 p-4">
-                      <div className="flex min-w-0 items-center gap-3">
+                    <Card key={`${item.id || item.name}-${item.index}`} className="p-3">
+                      <div className="flex items-start gap-3">
                         {item.image ? (
                           <ImageWithFallback
                             src={item.image}
@@ -315,7 +319,7 @@ export default function OrderItemRatingPage() {
                           {!item.id && <p className="mt-1 text-xs text-[var(--error)]">This item cannot be rated.</p>}
                         </div>
                       </div>
-                      <div role="group" aria-label={`Rate ${item.name}`} className="flex shrink-0 items-center gap-0.5">
+                      <div role="group" aria-label={`Rate ${item.name}`} className="mt-3 flex justify-center gap-2">
                         {[1, 2, 3, 4, 5].map((star) => (
                           <button
                             key={star}
@@ -327,9 +331,9 @@ export default function OrderItemRatingPage() {
                               setRatings((current) => ({ ...current, [item.index]: star }));
                               setSaved(false);
                             }}
-                            className={`rounded-lg p-1 ${isSaved ? "cursor-not-allowed" : "transition-transform hover:scale-110 disabled:opacity-40"}`}
+                            className={`rounded-lg p-1.5 ${isSaved ? "cursor-not-allowed" : "transition-transform hover:scale-110 disabled:opacity-40"}`}
                           >
-                            <Star className={`size-5 ${star <= selectedRating ? "fill-[var(--amber)] text-[var(--amber)]" : "fill-[var(--border)] text-[var(--border)]"}`} aria-hidden="true" />
+                            <Star className={`size-6 ${star <= selectedRating ? "fill-[var(--amber)] text-[var(--amber)]" : "fill-[var(--border)] text-[var(--border)]"}`} aria-hidden="true" />
                           </button>
                         ))}
                       </div>
@@ -360,6 +364,74 @@ export default function OrderItemRatingPage() {
           </>
         ) : null}
       </main>
+
+      {showThankYou && order && (
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/60 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="item-rating-thank-you-title"
+            className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-line bg-surface p-5 shadow-2xl sm:p-6"
+          >
+            <div className="mx-auto mb-3 grid size-14 place-items-center rounded-full bg-[var(--success-soft)] text-[var(--success)]">
+              <CheckCircle2 className="size-8" aria-hidden="true" />
+            </div>
+            <h2 id="item-rating-thank-you-title" className="text-center text-xl font-bold text-[var(--ink)]">Thank you for your feedback!</h2>
+            <p className="mt-2 text-center text-sm leading-relaxed text-[var(--muted-foreground)]">
+              We appreciate you taking the time to share your thoughts. Your ratings help other customers choose what to order, and we hope to serve you again soon.
+            </p>
+
+            {order.items.some((item) => savedRatings[item.index] > 0) && (
+              <div className="mt-5 border-t border-line pt-4">
+                <h3 className="mb-3 text-sm font-bold text-[var(--ink)]">Your item ratings</h3>
+                <div className="space-y-2">
+                  {order.items.map((item) => {
+                    const itemRating = savedRatings[item.index];
+                    if (!itemRating) return null;
+                    return (
+                      <div key={`${item.id || item.name}-${item.index}`} className="flex items-center gap-3 rounded-xl border border-line p-2.5">
+                        <div className="size-12 shrink-0 overflow-hidden rounded-lg bg-[var(--muted)]">
+                          {item.image ? <ImageWithFallback src={item.image} alt={item.name} className="size-full object-cover" /> : null}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-[var(--ink)]">{item.name}</p>
+                          <div className="mt-1 flex items-center gap-0.5" role="img" aria-label={`You rated ${item.name} ${itemRating} out of 5 stars`}>
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <Star key={star} className={`size-4 ${star <= itemRating ? "fill-[var(--amber)] text-[var(--amber)]" : "fill-[var(--border)] text-[var(--border)]"}`} aria-hidden="true" />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 space-y-2">
+              {order.items.some((item) => item.id && !savedRatings[item.index]) && (
+                <Button
+                  type="button"
+                  onClick={() => setShowThankYou(false)}
+                  className="w-full bg-[var(--primary)] py-3 font-bold text-white hover:bg-[var(--primary)]"
+                >
+                  Continue rating
+                </Button>
+              )}
+              <Button
+                type="button"
+                onClick={goBack}
+                variant={order.items.some((item) => item.id && !savedRatings[item.index]) ? "outline" : undefined}
+                className={order.items.some((item) => item.id && !savedRatings[item.index])
+                  ? "w-full py-3 font-bold"
+                  : "w-full bg-[var(--primary)] py-3 font-bold text-white hover:bg-[var(--primary)]"}
+              >
+                Back to order details
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

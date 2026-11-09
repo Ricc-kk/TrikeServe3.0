@@ -1504,13 +1504,20 @@ export default function OrderDetail() {
                       {order.items.map((item, index) => {
                         const itemRating = itemRatings[index];
                         if (!itemRating) return null;
+                        const itemImage = String(item.image ?? item.image_url ?? item.imageUrl ?? '').trim();
                         return (
-                          <div key={`${item.id || item.name}-${index}`} className="flex items-center justify-between gap-3">
-                            <p className="min-w-0 truncate text-sm font-medium text-[var(--ink)]">{item.name}</p>
-                            <div className="flex shrink-0 items-center gap-1" role="img" aria-label={`You rated ${item.name} ${itemRating} out of 5 stars`}>
-                              {[1, 2, 3, 4, 5].map((star) => (
-                                <Star key={star} className={`size-4 ${star <= itemRating ? 'fill-[var(--amber)] text-[var(--amber)]' : 'fill-[var(--border)] text-[var(--border)]'}`} aria-hidden="true" />
-                              ))}
+                          <div key={`${item.id || item.name}-${index}`} className="flex items-center gap-3 rounded-xl border border-line p-2.5">
+                            <div className="size-14 shrink-0 overflow-hidden rounded-xl bg-[var(--muted)]">
+                              {itemImage ? <ImageWithFallback src={itemImage} alt={item.name || 'Ordered item'} className="size-full object-cover" /> : null}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold text-[var(--ink)]">{item.name}</p>
+                              <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">Qty: {Number(item.quantity) > 0 ? Number(item.quantity) : 1}</p>
+                              <div className="mt-1 flex items-center gap-0.5" role="img" aria-label={`You rated ${item.name} ${itemRating} out of 5 stars`}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star key={star} className={`size-4 ${star <= itemRating ? 'fill-[var(--amber)] text-[var(--amber)]' : 'fill-[var(--border)] text-[var(--border)]'}`} aria-hidden="true" />
+                                ))}
+                              </div>
                             </div>
                           </div>
                         );
