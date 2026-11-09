@@ -23,6 +23,7 @@ import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { createDropoffMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
+import { getShortestAvoidHighwaysRoadRouteDetails } from "@/lib/roadRouting";
 
 interface OrderData {
   id: string;
@@ -38,6 +39,8 @@ interface OrderData {
   status: string;
   deliveryMode: string;
   address: string;
+  dropoffLat?: number | null;
+  dropoffLng?: number | null;
   estimatedTime: string;
   items: any[];
   subtotal: number;
@@ -94,6 +97,8 @@ function buildOrderData(dbOrder: any): OrderData {
     status: dbOrder.status || 'pending',
     deliveryMode: dbOrder.delivery_mode || 'delivery',
     address: dbOrder.address || '',
+    dropoffLat: dbOrder.dropoff_lat == null || !Number.isFinite(Number(dbOrder.dropoff_lat)) ? null : Number(dbOrder.dropoff_lat),
+    dropoffLng: dbOrder.dropoff_lng == null || !Number.isFinite(Number(dbOrder.dropoff_lng)) ? null : Number(dbOrder.dropoff_lng),
     estimatedTime: dbOrder.estimated_time || '30 mins',
     items: parsedItems,
     subtotal: dbOrder.subtotal || 0,
@@ -244,6 +249,8 @@ export default function OrderDetail() {
   const [error, setError] = useState<string | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const driverLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  driverLocationRef.current = driverLocation;
   const [restaurantLocation, setRestaurantLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [etaToActiveStop, setEtaToActiveStop] = useState<string | null>(null);
@@ -257,7 +264,12 @@ export default function OrderDetail() {
     trackingMapIsProgrammaticallyFittingRef.current = false;
     setTrackingMapWasManuallyMoved(false);
   }, [order?.id]);
-  const customerLocation = useMemo(() => parseAddressCoordinates(order?.address), [order?.address]);
+  const customerLocation = useMemo(() => {
+    if (order?.dropoffLat != null && order?.dropoffLng != null) {
+      return { lat: order.dropoffLat, lng: order.dropoffLng };
+    }
+    return parseAddressCoordinates(order?.address);
+  }, [order?.dropoffLat, order?.dropoffLng, order?.address]);
   const liveDriverStatus = order?.driverStatus ?? null;
   const normalizedDriverStatus = liveDriverStatus?.trim().toLowerCase().replace(/_/g, '-') ?? '';
   const normalizedOrderStatus = order?.status.trim().toLowerCase().replace(/_/g, '-') ?? '';
@@ -278,6 +290,7 @@ export default function OrderDetail() {
         setRating(0);
         setRatingSubmitted(false);
         setShowItemRatingPrompt(false);
+        setDriverLocation(null);
         setRestaurantLocation(null);
         setRestaurantProfile(null);
         attemptedRestaurantGeocodeRef.current = null;
@@ -298,7 +311,7 @@ export default function OrderDetail() {
         try {
           const { data: rideReq } = await supabase
             .from('ride_requests')
-            .select('id, status, created_at, accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
+            .select('id, status, created_at, accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng')
             .eq('order_id', orderId)
             .in('status', ['pending', 'accepted', 'on-the-way', 'arrived', 'in-progress', 'in_progress', 'completed'])
             .order('created_at', { ascending: false })
@@ -312,6 +325,12 @@ export default function OrderDetail() {
             const pickupLng = Number(rideReq.pickup_lng);
             if (rideReq.pickup_lat != null && rideReq.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
               setRestaurantLocation({ lat: pickupLat, lng: pickupLng });
+            }
+            const dropoffLat = Number(rideReq.dropoff_lat);
+            const dropoffLng = Number(rideReq.dropoff_lng);
+            if (rideReq.dropoff_lat != null && rideReq.dropoff_lng != null && Number.isFinite(dropoffLat) && Number.isFinite(dropoffLng)) {
+              data.dropoffLat = dropoffLat;
+              data.dropoffLng = dropoffLng;
             }
             data.driverId = rideReq.accepted_driver_id || undefined;
             data.driverName = rideReq.accepted_driver_id ? rideReq.driver_name || undefined : undefined;
@@ -499,7 +518,7 @@ export default function OrderDetail() {
          */
         const { data: rideReq, error: rideReqError } = await supabase
           .from('ride_requests')
-          .select('id, status, created_at, accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
+          .select('id, status, created_at, accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng')
           .eq('order_id', orderId)
           .in('status', ['pending', 'accepted', 'on-the-way', 'arrived', 'in-progress', 'in_progress', 'completed'])
           .order('created_at', { ascending: false })
@@ -519,6 +538,12 @@ export default function OrderDetail() {
 
         // Build new order data and always set it
         const newData = buildOrderData(data);
+        const dropoffLat = Number(rideReq?.dropoff_lat);
+        const dropoffLng = Number(rideReq?.dropoff_lng);
+        if (rideReq?.dropoff_lat != null && rideReq?.dropoff_lng != null && Number.isFinite(dropoffLat) && Number.isFinite(dropoffLng)) {
+          newData.dropoffLat = dropoffLat;
+          newData.dropoffLng = dropoffLng;
+        }
         newData.deliveryRequestId = rideReq?.id || null;
         newData.deliveryRequestCreatedAt = rideReq?.created_at || null;
         newData.driverId = rideReq?.accepted_driver_id || undefined;
@@ -547,7 +572,9 @@ export default function OrderDetail() {
             prev.driverId === newData.driverId &&
             prev.driverName === newData.driverName &&
             prev.driverStatus === newData.driverStatus &&
-            prev.driverMessage === newData.driverMessage
+            prev.driverMessage === newData.driverMessage &&
+            prev.dropoffLat === newData.dropoffLat &&
+            prev.dropoffLng === newData.dropoffLng
           ) return prev;
           return newData;
         });
@@ -608,6 +635,8 @@ export default function OrderDetail() {
       // request also clears the previous driver's details immediately.
       setOrder((prev) => prev ? {
         ...prev,
+        dropoffLat: ride.dropoff_lat != null && Number.isFinite(Number(ride.dropoff_lat)) ? Number(ride.dropoff_lat) : prev.dropoffLat,
+        dropoffLng: ride.dropoff_lng != null && Number.isFinite(Number(ride.dropoff_lng)) ? Number(ride.dropoff_lng) : prev.dropoffLng,
         deliveryRequestId: ride.id || null,
         deliveryRequestCreatedAt: eventCreatedAt || prev.deliveryRequestCreatedAt || null,
         driverId: ride.accepted_driver_id || undefined,
@@ -736,37 +765,77 @@ export default function OrderDetail() {
     return () => { active = false; };
   }, [isRiderEnRouteToRestaurant, restaurantLocation, restaurantProfile?.address, isMapsLoaded]);
 
-  // Follow the driver's active leg: restaurant before pickup, customer after.
+  // Use the same road route helper as /rider/active-ride. Keep retrying until
+  // both GPS and route geometry are available, then refresh from the latest
+  // driver position every 12 seconds without restarting on each GPS update.
   useEffect(() => {
-    let active = true;
+    let cancelled = false;
+    let inFlight = false;
+    let hasRoute = false;
+    let routeTimer: number | undefined;
     setRoutePath([]);
     setEtaToActiveStop(null);
-    if (isDriverAtRestaurant && isRiderEnRouteToRestaurant) return () => { active = false; };
-    if (!driverLocation || !activeTrackingDestination || !isMapsLoaded || !(window as any).google) {
-      return () => { active = false; };
+
+    const orderStatus = order?.status.trim().toLowerCase().replace(/_/g, '-') ?? '';
+    const shouldTrackOrder = order?.deliveryMode === 'delivery'
+      && Boolean(order.driverId || order.driverName)
+      && !['delivered', 'completed', 'cancelled'].includes(orderStatus);
+    if (
+      !shouldTrackOrder ||
+      (isDriverAtRestaurant && isRiderEnRouteToRestaurant) ||
+      !activeTrackingDestination ||
+      !isMapsLoaded ||
+      !(window as any).google?.maps
+    ) {
+      return () => { cancelled = true; };
     }
 
-    const DirectionsService = new (window as any).google.maps.DirectionsService();
-    DirectionsService.route({
-      origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
-      destination: new (window as any).google.maps.LatLng(activeTrackingDestination.lat, activeTrackingDestination.lng),
-      travelMode: (window as any).google.maps.TravelMode.DRIVING,
-    }, (result: any, status: string) => {
-      if (!active) return;
-      const route = status === 'OK' ? result?.routes?.[0] : null;
-      if (!route) return;
+    const destination = activeTrackingDestination;
+    const scheduleNext = () => {
+      if (cancelled) return;
+      routeTimer = window.setTimeout(() => { void calculateRoute(); }, hasRoute ? 12000 : 1500);
+    };
 
-      const overviewPoints = route.overview_polyline?.points;
-      const stepPath = (route.legs || []).flatMap((leg: any) =>
-        (leg.steps || []).flatMap((step: any) =>
-          step.polyline?.points ? decodePolyline(step.polyline.points) : [],
-        ),
-      );
-      setRoutePath(overviewPoints ? decodePolyline(overviewPoints) : stepPath);
-      setEtaToActiveStop(route.legs?.[0]?.duration?.text || null);
-    });
-    return () => { active = false; };
-  }, [driverLocation, activeTrackingDestination?.lat, activeTrackingDestination?.lng, isMapsLoaded, isDriverAtRestaurant, isRiderEnRouteToRestaurant]);
+    const calculateRoute = async () => {
+      if (cancelled || inFlight) return;
+      const origin = driverLocationRef.current;
+      if (!origin) {
+        scheduleNext();
+        return;
+      }
+
+      inFlight = true;
+      try {
+        const route = await getShortestAvoidHighwaysRoadRouteDetails(
+          origin,
+          destination,
+          import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
+        );
+        if (cancelled) return;
+        if (route.path.length > 1) {
+          setRoutePath(route.path);
+          setEtaToActiveStop(route.durationText || null);
+          hasRoute = true;
+        } else {
+          setRoutePath([]);
+          setEtaToActiveStop(null);
+          hasRoute = false;
+        }
+      } catch (error) {
+        if (!cancelled) console.warn('[OrderDetail] Could not calculate live delivery route:', error);
+        hasRoute = false;
+      } finally {
+        inFlight = false;
+        scheduleNext();
+      }
+    };
+
+    void calculateRoute();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(routeTimer);
+    };
+  }, [order?.id, order?.deliveryMode, order?.status, order?.driverId, order?.driverName, activeTrackingDestination?.lat, activeTrackingDestination?.lng, isMapsLoaded, isDriverAtRestaurant, isRiderEnRouteToRestaurant]);
 
   const fitTrackingMapToRoute = (map: any) => {
     const maps = (window as any).google?.maps;
@@ -801,21 +870,6 @@ export default function OrderDetail() {
     if (trackingMapWasManuallyMovedRef.current) return;
     fitTrackingMapToRoute(trackingMapRef.current);
   }, [driverLocation, activeTrackingDestination?.lat, activeTrackingDestination?.lng, routePath]);
-
-  const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
-    const points: Array<{ lat: number; lng: number }> = [];
-    let index = 0, lat = 0, lng = 0;
-    while (index < encoded.length) {
-      let b: number, shift = 0, result = 0;
-      do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-      lat += (result & 1) ? ~(result >> 1) : (result >> 1);
-      shift = 0; result = 0;
-      do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-      lng += (result & 1) ? ~(result >> 1) : (result >> 1);
-      points.push({ lat: lat / 1e5, lng: lng / 1e5 });
-    }
-    return points;
-  };
 
   /**
    * Cancel a pending order, recording the customer's reason.
@@ -1118,14 +1172,14 @@ export default function OrderDetail() {
                   icon={createDropoffMarkerIcon({ size: 32 })}
                 />
               )}
-              {routePath.length > 0 && (
+              {routePath.length > 1 && (
                 <Polyline
                   path={routePath}
                   options={{
                     strokeColor: isRiderEnRouteToRestaurant ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
                     strokeOpacity: 0.9,
-                    strokeWeight: 4,
-                    geodesic: true,
+                    strokeWeight: 6,
+                    zIndex: 10,
                   }}
                 />
               )}
@@ -1426,7 +1480,7 @@ export default function OrderDetail() {
                     <Star key={star} className={`size-5 ${star <= rating ? 'fill-[var(--amber)] text-[var(--amber)]' : 'fill-[var(--border)] text-[var(--border)]'}`} aria-hidden="true" />
                   ))}
                 </div>
-                {showItemRatingPrompt && order.restaurantId && order.items.some((item) => String(item.id ?? "").trim()) && (
+                {showItemRatingPrompt && order.items.length > 0 && (
                   <div className="mt-4 rounded-2xl bg-[var(--muted)] p-4 text-left">
                     <p className="text-sm font-semibold text-[var(--ink)]">Would you also like to rate the items you ordered?</p>
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">

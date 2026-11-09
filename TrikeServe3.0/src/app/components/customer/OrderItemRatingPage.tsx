@@ -37,11 +37,15 @@ function parseOrderedItems(rawItems: unknown): OrderedItem[] {
     const quantity = Number(item.quantity);
     return {
       index,
-      id: String(item.id ?? "").trim(),
+      id: String(item.id ?? item.menu_item_id ?? item.menuItemId ?? item.item_id ?? "").trim(),
       name: String(item.name ?? "").trim() || `Item ${index + 1}`,
       quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
     };
   });
+}
+
+function normalizeItemName(name: string): string {
+  return name.trim().toLocaleLowerCase().replace(/\s+/g, " ");
 }
 
 export default function OrderItemRatingPage() {
@@ -124,6 +128,34 @@ export default function OrderItemRatingPage() {
           }
         }
         const orderedItems = parseOrderedItems(data.items);
+        if (restaurantId && orderedItems.some((item) => !item.id)) {
+          const { data: menuItems, error: menuItemsError } = await supabase
+            .from("menu_items")
+            .select("id, name")
+            .eq("restaurant_id", restaurantId);
+
+          if (menuItemsError) {
+            console.warn("[OrderItemRatingPage] Could not resolve legacy ordered item IDs:", menuItemsError);
+          } else {
+            const menuIdsByName = new Map<string, string[]>();
+            for (const menuItem of menuItems ?? []) {
+              const key = normalizeItemName(String(menuItem.name ?? ""));
+              if (!key) continue;
+              const matchingIds = menuIdsByName.get(key) ?? [];
+              matchingIds.push(String(menuItem.id));
+              menuIdsByName.set(key, matchingIds);
+            }
+
+            for (const item of orderedItems) {
+              if (item.id) continue;
+              const matches = menuIdsByName.get(normalizeItemName(item.name)) ?? [];
+              // Only attach a menu ID when the name points to one item. An
+              // ambiguous match could file the customer's rating against the
+              // wrong dish when a restaurant reuses a name.
+              if (matches.length === 1) item.id = matches[0];
+            }
+          }
+        }
         const { data: savedRows, error: ratingsError } = await supabase
           .from("menu_item_ratings")
           .select("order_item_index, rating")

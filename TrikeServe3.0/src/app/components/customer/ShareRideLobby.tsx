@@ -1022,8 +1022,11 @@ export default function ShareRideLobby({
   const fitLobbyRouteBounds = useCallback(() => {
     const hasAssignedDriver = ['driver_found', 'in_progress'].includes(String(lobby?.status || ''));
     const assignedPage = presentation === 'page' && hasAssignedDriver;
+    const routeAnchor = pickupCoords || terminalMarkerPosition || terminalCoords;
     const routeStart = presentation === 'page'
-      ? pickupCoords || terminalMarkerPosition || terminalCoords
+      ? assignedPage && !isDriverHeadingToPickup
+        ? driverLocation || routeAnchor
+        : routeAnchor
       : pickupCoords;
     const visibleRoutePath = presentation === 'page'
       ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords, lobby?.passengers_json || [])
@@ -1035,7 +1038,7 @@ export default function ShareRideLobby({
       : 'empty';
     const liveRouteSignature = `${isDriverHeadingToPickup ? 'pickup' : 'dropoff'}:${activeDriverRoutePath.length > 1 ? 'live' : 'planned'}`;
     const liveRideFitKey = hasAssignedDriver
-      ? `${lobby?.id || ''}:${lobby?.driver_id || ''}:${lobby?.status || ''}:${routeSignature}:${liveRouteSignature}:${routeStart?.lat ?? ''}:${routeStart?.lng ?? ''}`
+      ? `${lobby?.id || ''}:${lobby?.driver_id || ''}:${lobby?.status || ''}:${routeSignature}:${liveRouteSignature}:${routeAnchor?.lat ?? ''}:${routeAnchor?.lng ?? ''}`
       : null;
     if (!hasAssignedDriver) lobbyMapFittedRideKeyRef.current = null;
     if (lobbyMapWasManuallyMovedRef.current) return;
@@ -2601,8 +2604,11 @@ if (loading) {
       : 0,
   );
   const showAssignedRidePage = presentation === 'page' && ['driver_found', 'in_progress'].includes(lobby.status);
+  const routeAnchor = pickupCoords || terminalMarkerPosition || terminalCoords;
   const routeStart = presentation === 'page'
-    ? pickupCoords || terminalMarkerPosition || terminalCoords
+    ? showAssignedRidePage && !isDriverHeadingToPickup
+      ? driverLocation || routeAnchor
+      : routeAnchor
     : pickupCoords;
   const mapTerminalRoutePath = presentation === 'page'
     ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords, lobby?.passengers_json || [])
