@@ -10,11 +10,7 @@ import {
 
 export type WebsiteFeature = "customerRideBooking" | "driverQueueJoining" | "driverFoodDelivery";
 
-const websiteFeatureFlags: Record<WebsiteFeature, string | undefined> = {
-  customerRideBooking: import.meta.env.VITE_ENABLE_WEB_RIDE_SERVICES,
-  driverQueueJoining: import.meta.env.VITE_ENABLE_WEB_DRIVER_QUEUE_JOINING,
-  driverFoodDelivery: import.meta.env.VITE_ENABLE_WEB_DRIVER_FOOD_DELIVERY,
-};
+const customerRideBookingFlag = import.meta.env.VITE_ENABLE_WEB_RIDE_SERVICES;
 
 export function useDevModeStatus(): [boolean, (enabled: boolean) => void] {
   const [enabled, setEnabled] = useState(isDevModeEnabled);
@@ -55,9 +51,13 @@ export function useDevModeOverride(feature: DevModeFeature): [boolean, (enabled:
   return [!devModeEnabled || featureEnabled, updateFeature];
 }
 
-/** Website services are enabled by default; an explicit build flag can opt out. */
+/** Customer rides retain a build flag; drivers can use queue and delivery services on the website. */
 export function isWebsiteFeatureEnabled(feature: WebsiteFeature): boolean {
-  return websiteFeatureFlags[feature]?.trim().toLowerCase() !== "false";
+  if (feature === "customerRideBooking") {
+    return customerRideBookingFlag?.trim().toLowerCase() !== "false";
+  }
+
+  return true;
 }
 
 /** A local developer override that applies only while Developer Mode is enabled. */
