@@ -557,6 +557,18 @@ export default function CustomerHome() {
     * been given a driver yet.
     */
    const { privateRide: activeRideRequest, lobby: activeRideLobby, checked: rideContextChecked } = useActiveRideContext(user?.id);
+   const activeRideRequestPickupCoords = useMemo(() => {
+     if (activeRideRequest?.pickup_lat == null || activeRideRequest?.pickup_lng == null) return null;
+     const lat = Number(activeRideRequest.pickup_lat);
+     const lng = Number(activeRideRequest.pickup_lng);
+     return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+   }, [activeRideRequest?.pickup_lat, activeRideRequest?.pickup_lng]);
+   const activeRideRequestDropoffCoords = useMemo(() => {
+     if (activeRideRequest?.dropoff_lat == null || activeRideRequest?.dropoff_lng == null) return null;
+     const lat = Number(activeRideRequest.dropoff_lat);
+     const lng = Number(activeRideRequest.dropoff_lng);
+     return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+   }, [activeRideRequest?.dropoff_lat, activeRideRequest?.dropoff_lng]);
    const isActiveShareRideMap = Boolean(
      activeRideLobby?.id ||
      (showShareLobby && selectedVehicle === 'share'),
@@ -631,7 +643,7 @@ export default function CustomerHome() {
    ]);
    const activeShareRideMapDropoff = activeShareRideMapDetails.isActive
      ? activeShareRideMapDetails.dropoffs[activeShareRideMapDetails.dropoffs.length - 1] || null
-     : dropoffCoords;
+     : activeRideRequestDropoffCoords || dropoffCoords;
    const isDeliveryRide = Boolean(
      activeRideRequest?.order_id ||
      String(activeRideRequest?.ride_type || activeRideRequest?.type || '').toLowerCase() === 'delivery' ||
@@ -844,6 +856,7 @@ export default function CustomerHome() {
    const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
    const [driverRoutePath, setDriverRoutePath] = useState<LatLng[]>([]);
    const [destinationRoutePath, setDestinationRoutePath] = useState<LatLng[]>([]);
+   const [privateRideRoadPath, setPrivateRideRoadPath] = useState<LatLng[]>([]);
    const hasPassengerBeenPickedUp =
      rideStatus === 'in-transit' ||
      ['pickup', 'picked-up', 'in-progress', 'drop-off', 'dropped-off', 'payment', 'awaiting-payment']
@@ -2667,7 +2680,9 @@ export default function CustomerHome() {
        setDriverRoutePath([]);
        return;
      }
-     const destination = hasPassengerBeenPickedUp ? dropoffCoords : pickupCoords;
+     const destination = hasPassengerBeenPickedUp
+       ? isPrivateRide ? activeRideRequestDropoffCoords || dropoffCoords : dropoffCoords
+       : isPrivateRide ? activeRideRequestPickupCoords || pickupCoords : pickupCoords;
      if (!driverLocation || !destination || !isMapsLoaded || !(window as any).google) {
        setDriverRoutePath([]);
        return;
@@ -2676,48 +2691,19 @@ export default function CustomerHome() {
      let active = true;
      setDriverRoutePath([]);
 
-     if (isDeliveryRide) {
-       void getShortestAvoidHighwaysRoadRoute(
-         driverLocation,
-         destination,
-         GOOGLE_MAPS_API_KEY,
-       ).then(path => {
-         if (active) setDriverRoutePath(path.length > 1 ? path : []);
-       }).catch(() => {
-         if (active) setDriverRoutePath([]);
-       });
-       return () => {
-         active = false;
-       };
-     }
-
-     const DirectionsService = new (window as any).google.maps.DirectionsService();
-     DirectionsService.route(
-       {
-         origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
-         destination: new (window as any).google.maps.LatLng(destination.lat, destination.lng),
-         travelMode: (window as any).google.maps.TravelMode.DRIVING,
-       },
-       (result: any, status: string) => {
-         if (!active) return;
-         if (status === 'OK' && result?.routes?.[0]) {
-           const route = result.routes[0];
-           // Guard on the resolved path, not on `overview_polyline.points`.
-            // `routePathFromResult` exists precisely to recover geometry from the
-            // per-step polylines when the overview comes back null, so testing the
-            // overview first discarded every route that needed that fallback and
-            // left the map with no line at all during the ride.
-            const path = routePathFromResult(route);
-            setDriverRoutePath(path);
-         } else {
-           setDriverRoutePath([]);
-         }
-       }
-     );
+     void getShortestAvoidHighwaysRoadRoute(
+       driverLocation,
+       destination,
+       GOOGLE_MAPS_API_KEY,
+     ).then(path => {
+       if (active) setDriverRoutePath(path.length > 1 ? path : []);
+     }).catch(() => {
+       if (active) setDriverRoutePath([]);
+     });
      return () => {
        active = false;
      };
-   }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, driverLocation, pickupCoords, dropoffCoords, isMapsLoaded, visibleRideStatus, rideStateBelongsToCurrentUser, isDeliveryRide]);
+   }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, driverLocation, pickupCoords, dropoffCoords, activeRideRequestPickupCoords, activeRideRequestDropoffCoords, isMapsLoaded, visibleRideStatus, rideStateBelongsToCurrentUser, isDeliveryRide, isPrivateRide]);
 
    // Delivery drop-off legs use the shortest available road route while
    // avoiding highway travel.
@@ -3816,12 +3802,12 @@ export default function CustomerHome() {
   }, [shareRideTerminal]);
   const activeShareRideMapPickup = activeShareRideMapDetails.isActive
     ? activeShareRideMapDetails.pickup || pickupCoords
-    : pickupCoords;
+    : activeRideRequestPickupCoords || pickupCoords;
   const activeShareRideTerminalMarker = activeShareRideMapDetails.isActive
     ? shareRideTerminalPickup && Number.isFinite(shareRideTerminalPickup.lat) && Number.isFinite(shareRideTerminalPickup.lng)
       ? shareRideTerminalPickup
       : null
-    : pickupCoords;
+    : activeRideRequestPickupCoords || pickupCoords;
   const mapRoutesInView = useMemo(() => {
     // The dedicated booking map is an overview: customers need to compare all
     // available terminals and their mapped routes before choosing a pickup.
@@ -3865,26 +3851,34 @@ export default function CustomerHome() {
   const isPrivateRideSearching = isPrivateRideMap && rideStateBelongsToCurrentUser && visibleRideStatus === 'searching';
   const isPrivateRideInProgress = isPrivateRideMap && rideStateBelongsToCurrentUser &&
     ['driver-found', 'picking-up', 'in-transit'].includes(visibleRideStatus || '');
-  const privateRideRouteOrigin = isPrivateRideSearching ? activeRideTerminalCenter : pickupCoords;
+  const privateRideRouteOrigin = isPrivateRideSearching
+    ? activeRideTerminalCenter || activeRideRequestPickupCoords || pickupCoords
+    : activeRideRequestPickupCoords || pickupCoords;
+  const privateRideDestinationCoords = activeRideRequestDropoffCoords || dropoffCoords;
   const shouldShowPrivateRideRoute = isPrivateRideSearching || isPrivateRideInProgress;
-  const activeDestinationRoutePath = destinationRoutePath;
+  const activeDestinationRoutePath = isPrivateRideMap && !isDeliveryRide ? privateRideRoadPath : destinationRoutePath;
 
-  // Fit the terminal-to-drop-off preview while searching, then fit the booked
-  // pickup-to-drop-off ride once a driver accepts the request.
+  // Fit the same road geometry the driver uses, including the driver's live
+  // approach route when it is available.
   useEffect(() => {
     if (!shouldShowPrivateRideRoute) {
       activePrivateRideMapFitRef.current = null;
       return;
     }
-    if (!isMapsLoaded || !customerMapReady || !privateRideRouteOrigin || !dropoffCoords) return;
+    if (!isMapsLoaded || !customerMapReady || !privateRideRouteOrigin || !privateRideDestinationCoords) return;
+
+    const hasPrivateRideRoadPath = privateRideRoadPath.length > 1;
+    const hasDriverRoute = driverRoutePath.length > 1;
 
     const fitKey = [
       currentRequestId || '',
       isPrivateRideSearching ? 'searching' : 'assigned',
       privateRideRouteOrigin.lat,
       privateRideRouteOrigin.lng,
-      dropoffCoords.lat,
-      dropoffCoords.lng,
+      privateRideDestinationCoords.lat,
+      privateRideDestinationCoords.lng,
+      hasPrivateRideRoadPath ? 'road-ready' : 'road-pending',
+      hasDriverRoute ? 'driver-route-ready' : 'driver-route-pending',
     ].join(':');
     if (activePrivateRideMapFitRef.current === fitKey) return;
 
@@ -3893,9 +3887,12 @@ export default function CustomerHome() {
     if (!map || !maps?.LatLngBounds) return;
 
     const bounds = new maps.LatLngBounds();
-    bounds.extend(privateRideRouteOrigin);
-    bounds.extend(dropoffCoords);
-    if (haversineDistanceMeters(privateRideRouteOrigin, dropoffCoords) < 100) {
+    const routePoints = [
+      ...(hasPrivateRideRoadPath ? privateRideRoadPath : [privateRideRouteOrigin, privateRideDestinationCoords]),
+      ...(isPrivateRideInProgress && hasDriverRoute ? driverRoutePath : []),
+    ];
+    routePoints.forEach(point => bounds.extend(point));
+    if (!hasDriverRoute && haversineDistanceMeters(privateRideRouteOrigin, privateRideDestinationCoords) < 100) {
       map.panTo(privateRideRouteOrigin);
       map.setZoom(15);
     } else {
@@ -3909,31 +3906,34 @@ export default function CustomerHome() {
     customerMapReady,
     currentRequestId,
     privateRideRouteOrigin,
-    dropoffCoords,
+    privateRideDestinationCoords,
+    privateRideRoadPath,
+    driverRoutePath,
+    isPrivateRideInProgress,
   ]);
 
-  // While finding a driver, preview the road route from this request's terminal
-  // to the destination. After assignment, show the customer's booked pickup to
-  // destination route instead.
+  // Match /rider/active-ride's private route exactly: route from the request's
+  // pickup to its drop-off, using the same road router and avoiding highways.
+  // While searching, the terminal is the pickup; once accepted, the request row
+  // is the source of truth for both endpoints.
   useEffect(() => {
-    if (!isPrivateRideMap || isDeliveryRide) return;
-    if (!shouldShowPrivateRideRoute) {
-      setDestinationRoutePath(current => current.length ? [] : current);
+    if (!isPrivateRideMap || isDeliveryRide || !shouldShowPrivateRideRoute) {
+      setPrivateRideRoadPath(current => current.length ? [] : current);
       return;
     }
-    if (!privateRideRouteOrigin || !dropoffCoords || !isMapsLoaded || !(window as any).google) {
-      setDestinationRoutePath(current => current.length ? [] : current);
+    if (!privateRideRouteOrigin || !privateRideDestinationCoords || !isMapsLoaded || !(window as any).google) {
+      setPrivateRideRoadPath(current => current.length ? [] : current);
       return;
     }
-    if (haversineDistanceMeters(privateRideRouteOrigin, dropoffCoords) <= 5) {
-      setDestinationRoutePath(current => current.length ? [] : current);
+    if (haversineDistanceMeters(privateRideRouteOrigin, privateRideDestinationCoords) <= 5) {
+      setPrivateRideRoadPath(current => current.length ? [] : current);
       return;
     }
 
     let cancelled = false;
-    setDestinationRoutePath([]);
-    void getShortestAvoidHighwaysRoadRoute(privateRideRouteOrigin, dropoffCoords, GOOGLE_MAPS_API_KEY).then(path => {
-      if (!cancelled) setDestinationRoutePath(path);
+    setPrivateRideRoadPath([]);
+    void getShortestAvoidHighwaysRoadRoute(privateRideRouteOrigin, privateRideDestinationCoords, GOOGLE_MAPS_API_KEY).then(path => {
+      if (!cancelled) setPrivateRideRoadPath(path.length > 1 ? path : []);
     });
 
     return () => {
@@ -3945,8 +3945,8 @@ export default function CustomerHome() {
     shouldShowPrivateRideRoute,
     privateRideRouteOrigin?.lat,
     privateRideRouteOrigin?.lng,
-    dropoffCoords?.lat,
-    dropoffCoords?.lng,
+    privateRideDestinationCoords?.lat,
+    privateRideDestinationCoords?.lng,
     isMapsLoaded,
   ]);
   useEffect(() => {
@@ -4566,10 +4566,18 @@ const getPrice = () => {
                 />
               )}
 
-              {/* Keep the passenger's destination route visible, including while
-                  the driver is on the way and for drop-offs beyond TODA routes. */}
+              {/* Keep the booked private-ride road route visible, using the same
+                  color, weight, and stacking order as the driver's active map. */}
               {!isActiveShareRideMap && isPrivateRideMap && activeDestinationRoutePath.length > 0 && (
-                <Polyline path={activeDestinationRoutePath} options={buildNavigationRouteOptions(RIDE_MAP_DROPOFF_COLOR, 5)} />
+                <Polyline
+                  path={activeDestinationRoutePath}
+                  options={{
+                    strokeColor: RIDE_MAP_DROPOFF_COLOR,
+                    strokeWeight: 6,
+                    strokeOpacity: 0.9,
+                    zIndex: 20,
+                  }}
+                />
               )}
 
               {/* Delivery drop-off path follows road directions. */}
