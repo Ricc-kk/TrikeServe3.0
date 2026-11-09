@@ -281,17 +281,40 @@ function buildRouteThroughDropoff(
   pickup: { lat: number; lng: number } | null,
   dropoff: { lat: number; lng: number } | null,
   lobbyPassengers: LobbyPassenger[] = [],
+  currentPassengerId?: string,
 ): Array<{ lat: number; lng: number }> {
   if (!pickup || !dropoff || route.length < 2) return [];
 
   // Use the same active-stop set as the driver's map to choose the route
   // direction, then draw only this customer's path along that itinerary.
+  const normalizeDropoffStatus = (passenger: LobbyPassenger) =>
+    String(passenger.dropoff_status || passenger.dropoffStatus || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  const getDropoffCoords = (passenger: LobbyPassenger) => {
+    const rawPassenger = passenger as LobbyPassenger & { dropoff_lat?: number | null; dropoff_lng?: number | null };
+    const latValue = rawPassenger.dropoffLat ?? rawPassenger.dropoff_lat;
+    const lngValue = rawPassenger.dropoffLng ?? rawPassenger.dropoff_lng;
+    if (latValue == null || lngValue == null) return null;
+    const lat = Number(latValue);
+    const lng = Number(lngValue);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  };
+  const completedStatuses = ['dropped-off', 'completed'];
+  const currentPassenger = currentPassengerId
+    ? lobbyPassengers.find(passenger => passenger.id === currentPassengerId)
+    : null;
+  if (currentPassenger && completedStatuses.includes(normalizeDropoffStatus(currentPassenger))) return [];
+
   const activePassengers = lobbyPassengers.filter(passenger =>
-    !['dropped-off', 'completed'].includes(String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase()),
+    !completedStatuses.includes(normalizeDropoffStatus(passenger)),
   );
-  const itineraryPassengers = activePassengers.length > 0
-    ? activePassengers
-    : [{
+  const passengersWithDropoffs = activePassengers.filter(passenger => getDropoffCoords(passenger) !== null);
+  const targetIsInItinerary = passengersWithDropoffs.some(passenger => {
+    const coords = getDropoffCoords(passenger);
+    return coords !== null && haversineDistanceMeters(coords, dropoff) <= 30;
+  });
+  const itineraryPassengers = targetIsInItinerary
+    ? passengersWithDropoffs
+    : [...passengersWithDropoffs, {
         id: 'customer-dropoff',
         name: '',
         emoji: '',
@@ -302,10 +325,11 @@ function buildRouteThroughDropoff(
         dropoffLng: dropoff.lng,
       }];
   const itinerary = buildLobbyRouteItinerary(itineraryPassengers, pickup, route);
-  const destination = itinerary?.stops.find(stop =>
-    Math.abs(stop.coords.lat - dropoff.lat) < 0.00001
-    && Math.abs(stop.coords.lng - dropoff.lng) < 0.00001,
-  );
+  const destination = itinerary?.stops.reduce<RouteOrderedLobbyStop | null>((nearest, stop) =>
+    !nearest || haversineDistanceMeters(stop.coords, dropoff) < haversineDistanceMeters(nearest.coords, dropoff)
+      ? stop
+      : nearest,
+  null);
   if (!itinerary || !destination) return [];
 
   const pickupProjection = projectPointAlongRoute(pickup, itinerary.path);
@@ -1029,7 +1053,7 @@ export default function ShareRideLobby({
         : routeAnchor
       : pickupCoords;
     const visibleRoutePath = presentation === 'page'
-      ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords, lobby?.passengers_json || [])
+      ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords, lobby?.passengers_json || [], user?.id)
       : terminalRoutePath;
     const shouldShowLiveDriverRoute = !assignedPage || isDriverHeadingToPickup || visibleRoutePath.length === 0;
     const activeDriverRoutePath = shouldShowLiveDriverRoute ? driverRoutePath : [];
@@ -2611,7 +2635,7 @@ if (loading) {
       : routeAnchor
     : pickupCoords;
   const mapTerminalRoutePath = presentation === 'page'
-    ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords, lobby?.passengers_json || [])
+    ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords, lobby?.passengers_json || [], user?.id)
     : terminalRoutePath;
 
   const normalizedDriverStatus = String(
