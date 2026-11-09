@@ -4498,7 +4498,7 @@ const getPrice = () => {
                   )}
 
               {/* Show only routes for the active terminal. */}
-              {!isPrivateRideInProgress && mapRoutesInView.map(route => {
+              {!isPrivateRideSearching && !isPrivateRideInProgress && mapRoutesInView.map(route => {
                 const isSelectedRoute = isActiveShareRideMap
                   ? route.id === (activeShareRideRoute?.id || selectedTerminalBoundary.selectedRoute?.id)
                   : !isPrivateRideMap && route.terminalId === activeMapTerminalId && (

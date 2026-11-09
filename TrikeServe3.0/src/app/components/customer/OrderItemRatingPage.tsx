@@ -88,11 +88,21 @@ export default function OrderItemRatingPage() {
       try {
         const { data, error } = await supabase
           .from("orders")
-          .select("id, customer_id, customer_email, business_id, order_number, restaurant_id, restaurant_email, restaurant_name, status, items")
+          // Use the same schema-tolerant read as order details. Some existing
+          // Supabase projects have not applied every optional restaurant
+          // column migration, and naming those columns here makes PostgREST
+          // reject the whole order lookup before the rating page can open.
+          .select("*")
           .eq("id", orderId)
           .maybeSingle();
 
-        if (error || !data) {
+        if (error) {
+          console.error("[OrderItemRatingPage] Could not load order:", error);
+          if (active) setPageError("Could not load this order. Please return to order details and try again.");
+          return;
+        }
+
+        if (!data) {
           if (active) setPageError("Order not found.");
           return;
         }
