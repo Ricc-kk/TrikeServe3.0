@@ -1437,14 +1437,11 @@ export default function ActiveRide() {
     }
 
     const terminal = coordinateFromValues(rideData.pickupLat, rideData.pickupLng);
-    // While approaching the terminal, the separate live road route connects the
-    // tricycle to this terminal anchor. Once the ride is underway, continue the
-    // selected terminal road from the driver's current position so the planned
-    // route stays connected to the moving tricycle instead of restarting at the
-    // terminal on every screen restore.
-    const routeOrigin = !isHeadingToPickup && driverLocation
-      ? driverLocation
-      : terminal || driverLocation;
+    // Keep the itinerary anchored at the terminal, as on the customer's active
+    // share-ride map. The separate live road route connects the tricycle to the
+    // terminal, so the planned terminal road does not start from an off-road GPS
+    // point after pickup is confirmed.
+    const routeOrigin = terminal || driverLocation;
     if (!routeOrigin || sharedDropoffStops.length === 0 || !sharedTerminalRoute) {
       setSharedDropoffRoutes([]);
       return;
@@ -1452,7 +1449,6 @@ export default function ActiveRide() {
     setSharedDropoffRoutes(buildSharedDropoffRoutes(routeOrigin, sharedDropoffStops, sharedTerminalRoute));
   }, [
     isSharedRide,
-    isHeadingToPickup,
     rideData?.id,
     rideData?.pickupLat,
     rideData?.pickupLng,
@@ -1533,21 +1529,12 @@ export default function ActiveRide() {
   useEffect(() => {
     if (!rideData || !isMapsLoaded || !(window as any).google) return;
 
-    if (isSharedRide && !isHeadingToPickup) {
-      // The colored multi-stop route below replaces the single-destination route
-      // once the shared ride has left its pickup.
-      const sharedPhaseKey = `${rideData.id}:shared-dropoffs`;
-      if (routePhaseRef.current !== sharedPhaseKey) {
-        routePhaseRef.current = sharedPhaseKey;
-        setRoutePath(null);
-      }
-      return;
-    }
-
-    const phase = isHeadingToPickup ? 'restaurant' : 'customer';
+    const phase = isSharedRide
+      ? 'shared-terminal'
+      : isHeadingToPickup ? 'restaurant' : 'customer';
     const phaseKey = `${rideData.id}:${phase}`;
     if (routePhaseRef.current !== phaseKey) {
-      // Remove the previous leg immediately when the rider confirms pickup.
+      // Remove the previous single-destination leg when the active destination changes.
       routePhaseRef.current = phaseKey;
       setRoutePath(null);
     }
@@ -1564,8 +1551,9 @@ export default function ActiveRide() {
     let hasRoute = false;
     let routeTimer: number | undefined;
 
-    const targetLat = isHeadingToPickup ? rideData.pickupLat : rideData.dropoffLat;
-    const targetLng = isHeadingToPickup ? rideData.pickupLng : rideData.dropoffLng;
+    const targetIsTerminal = isSharedRide || isHeadingToPickup;
+    const targetLat = targetIsTerminal ? rideData.pickupLat : rideData.dropoffLat;
+    const targetLng = targetIsTerminal ? rideData.pickupLng : rideData.dropoffLng;
     const dest = targetLat != null && targetLng != null
       ? { lat: Number(targetLat), lng: Number(targetLng) }
       : null;
@@ -3010,7 +2998,7 @@ export default function ActiveRide() {
               terminalMarkerColor={pickupTerminalMarkerColor}
               terminalRouteColor={sharedTerminalRouteColor}
               terminalRoutePaths={sharedDropoffRoutes.map(route => route.path)}
-              driverToTerminalRoutePath={isHeadingToPickup ? routePath || [] : []}
+              driverToTerminalRoutePath={routePath || []}
               dropoffs={sharedDropoffStops.map((stop, index) => ({
                 id: stop.id,
                 position: stop.position,
