@@ -7,12 +7,14 @@ import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { supabase } from "../../../lib/supabase";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
+import { ImageWithFallback } from "../figma/ImageWithFallback";
 
 interface OrderedItem {
   index: number;
   id: string;
   name: string;
   quantity: number;
+  image: string;
 }
 
 interface RateOrder {
@@ -40,6 +42,7 @@ function parseOrderedItems(rawItems: unknown): OrderedItem[] {
       id: String(item.id ?? item.menu_item_id ?? item.menuItemId ?? item.item_id ?? "").trim(),
       name: String(item.name ?? "").trim() || `Item ${index + 1}`,
       quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+      image: String(item.image ?? item.image_url ?? item.imageUrl ?? "").trim(),
     };
   });
 }
@@ -85,7 +88,7 @@ export default function OrderItemRatingPage() {
       try {
         const { data, error } = await supabase
           .from("orders")
-          .select("id, customer_id, customer_email, business_id, order_number, restaurant_email, restaurant_name, status, items")
+          .select("id, customer_id, customer_email, business_id, order_number, restaurant_id, restaurant_email, restaurant_name, status, items")
           .eq("id", orderId)
           .maybeSingle();
 
@@ -180,7 +183,7 @@ export default function OrderItemRatingPage() {
         setSavedRatings(existing);
         if (ratingsError) {
           console.warn("[OrderItemRatingPage] Could not load saved item ratings:", ratingsError);
-          setRatingLoadError("Saved ratings could not be loaded. You can still submit a rating.");
+          setRatingLoadError("Saved ratings could not be loaded, so rating changes are disabled. Reload this page to try again.");
         }
       } catch (error) {
         console.error("[OrderItemRatingPage] Could not load order:", error);
@@ -200,7 +203,7 @@ export default function OrderItemRatingPage() {
   }));
 
   const submitRatings = async () => {
-    if (!order || !user?.id || !order.restaurantId || submitting) return;
+    if (!order || !user?.id || !order.restaurantId || submitting || ratingLoadError) return;
 
     const ratingsToSave = order.items.flatMap((item) => {
       const rating = Number(ratings[item.index]);
@@ -224,7 +227,7 @@ export default function OrderItemRatingPage() {
     try {
       const { error } = await supabase
         .from("menu_item_ratings")
-        .upsert(ratingsToSave, { onConflict: "order_id,order_item_index" });
+        .insert(ratingsToSave);
       if (error) throw error;
 
       setSavedRatings((current) => ({
@@ -284,12 +287,23 @@ export default function OrderItemRatingPage() {
                   const isSaved = selectedRating > 0 && savedRatings[item.index] === selectedRating;
                   return (
                     <Card key={`${item.id || item.name}-${item.index}`} className="flex items-center justify-between gap-3 p-4">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[var(--ink)]">{item.name}</p>
-                        <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
-                          Qty: {item.quantity} · {isSaved ? "Rating saved" : selectedRating ? "Ready to save" : "Not rated"}
-                        </p>
-                        {!item.id && <p className="mt-1 text-xs text-[var(--error)]">This item cannot be rated.</p>}
+                      <div className="flex min-w-0 items-center gap-3">
+                        {item.image ? (
+                          <ImageWithFallback
+                            src={item.image}
+                            alt={item.name}
+                            className="size-16 shrink-0 rounded-xl object-cover"
+                          />
+                        ) : (
+                          <div aria-hidden="true" className="size-16 shrink-0 rounded-xl bg-[var(--muted)]" />
+                        )}
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[var(--ink)]">{item.name}</p>
+                          <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                            Qty: {item.quantity} · {isSaved ? "Rating saved" : selectedRating ? "Ready to save" : "Not rated"}
+                          </p>
+                          {!item.id && <p className="mt-1 text-xs text-[var(--error)]">This item cannot be rated.</p>}
+                        </div>
                       </div>
                       <div role="group" aria-label={`Rate ${item.name}`} className="flex shrink-0 items-center gap-0.5">
                         {[1, 2, 3, 4, 5].map((star) => (
@@ -298,12 +312,12 @@ export default function OrderItemRatingPage() {
                             type="button"
                             aria-label={`Rate ${item.name} ${star} out of 5`}
                             aria-pressed={star === selectedRating}
-                            disabled={!item.id || submitting}
+                            disabled={!item.id || submitting || isSaved || Boolean(ratingLoadError)}
                             onClick={() => {
                               setRatings((current) => ({ ...current, [item.index]: star }));
                               setSaved(false);
                             }}
-                            className="rounded-lg p-1 transition-transform hover:scale-110 disabled:opacity-40"
+                            className={`rounded-lg p-1 ${isSaved ? "cursor-not-allowed" : "transition-transform hover:scale-110 disabled:opacity-40"}`}
                           >
                             <Star className={`size-5 ${star <= selectedRating ? "fill-[var(--amber)] text-[var(--amber)]" : "fill-[var(--border)] text-[var(--border)]"}`} aria-hidden="true" />
                           </button>
@@ -324,7 +338,7 @@ export default function OrderItemRatingPage() {
               <Button
                 type="button"
                 onClick={() => void submitRatings()}
-                disabled={!hasChanges || !order.restaurantId || submitting}
+                disabled={!hasChanges || !order.restaurantId || submitting || Boolean(ratingLoadError)}
                 className="w-full bg-[var(--primary)] py-3 font-bold text-white hover:bg-[var(--primary)] disabled:opacity-50"
               >
                 {submitting ? "Saving ratings…" : "Save ratings"}

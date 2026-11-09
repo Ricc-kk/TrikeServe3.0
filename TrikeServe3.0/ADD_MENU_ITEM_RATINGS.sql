@@ -28,11 +28,12 @@ DROP POLICY IF EXISTS "Anyone can submit menu item ratings" ON public.menu_item_
 CREATE POLICY "Anyone can submit menu item ratings" ON public.menu_item_ratings
   FOR INSERT WITH CHECK (true);
 
+-- Ratings are permanent once submitted. Dropping the old policy and revoking
+-- table privileges also locks databases where an earlier version was applied.
 DROP POLICY IF EXISTS "Anyone can update menu item ratings" ON public.menu_item_ratings;
-CREATE POLICY "Anyone can update menu item ratings" ON public.menu_item_ratings
-  FOR UPDATE USING (true) WITH CHECK (true);
+REVOKE UPDATE ON TABLE public.menu_item_ratings FROM PUBLIC, anon, authenticated;
 
-GRANT SELECT, INSERT, UPDATE ON public.menu_item_ratings TO anon, authenticated;
+GRANT SELECT, INSERT ON public.menu_item_ratings TO anon, authenticated;
 
 -- A compact summary avoids loading every individual rating to choose a badge.
 CREATE OR REPLACE VIEW public.menu_item_rating_summary AS

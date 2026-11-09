@@ -236,6 +236,8 @@ export default function OrderDetail() {
   const [rating, setRating] = useState(0);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [itemRatings, setItemRatings] = useState<Record<number, number>>({});
+  const [itemRatingsLoading, setItemRatingsLoading] = useState(false);
   const [showItemRatingPrompt, setShowItemRatingPrompt] = useState(false);
   // Cancelling an order asks for a reason first.
   const [showCancelOrderPrompt, setShowCancelOrderPrompt] = useState(false);
@@ -461,6 +463,44 @@ export default function OrderDetail() {
     };
 
     void loadSavedRestaurantRating();
+    return () => { active = false; };
+  }, [order?.id, user?.id]);
+
+  // Restore this customer's saved dish ratings so they remain visible below
+  // their restaurant rating when they revisit the order.
+  useEffect(() => {
+    setItemRatings({});
+    setItemRatingsLoading(false);
+    if (!order?.id || !user?.id) return;
+
+    let active = true;
+    const loadSavedItemRatings = async () => {
+      setItemRatingsLoading(true);
+      const { data: savedRows, error: savedRowsError } = await supabase
+        .from('menu_item_ratings')
+        .select('order_item_index, rating')
+        .eq('order_id', order.id)
+        .eq('customer_id', user.id);
+
+      if (!active) return;
+      setItemRatingsLoading(false);
+      if (savedRowsError) {
+        console.warn('[OrderDetail] Could not load saved item ratings:', savedRowsError);
+        return;
+      }
+
+      const restoredRatings: Record<number, number> = {};
+      for (const row of savedRows ?? []) {
+        const index = Number(row.order_item_index);
+        const savedValue = Number(row.rating);
+        if (Number.isInteger(index) && index >= 0 && Number.isInteger(savedValue) && savedValue >= 1 && savedValue <= 5) {
+          restoredRatings[index] = savedValue;
+        }
+      }
+      setItemRatings(restoredRatings);
+    };
+
+    void loadSavedItemRatings();
     return () => { active = false; };
   }, [order?.id, user?.id]);
 
@@ -1480,7 +1520,31 @@ export default function OrderDetail() {
                     <Star key={star} className={`size-5 ${star <= rating ? 'fill-[var(--amber)] text-[var(--amber)]' : 'fill-[var(--border)] text-[var(--border)]'}`} aria-hidden="true" />
                   ))}
                 </div>
-                {showItemRatingPrompt && order.items.length > 0 && (
+                {itemRatingsLoading && (
+                  <p className="mt-4 text-xs text-[var(--muted-foreground)]">Loading your item ratings…</p>
+                )}
+                {order.items.some((_, index) => itemRatings[index]) && (
+                  <div className="mt-5 border-t border-line pt-4 text-left">
+                    <h4 className="text-sm font-bold text-[var(--ink)]">Your item ratings</h4>
+                    <div className="mt-3 space-y-3">
+                      {order.items.map((item, index) => {
+                        const itemRating = itemRatings[index];
+                        if (!itemRating) return null;
+                        return (
+                          <div key={`${item.id || item.name}-${index}`} className="flex items-center justify-between gap-3">
+                            <p className="min-w-0 truncate text-sm font-medium text-[var(--ink)]">{item.name}</p>
+                            <div className="flex shrink-0 items-center gap-1" role="img" aria-label={`You rated ${item.name} ${itemRating} out of 5 stars`}>
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star key={star} className={`size-4 ${star <= itemRating ? 'fill-[var(--amber)] text-[var(--amber)]' : 'fill-[var(--border)] text-[var(--border)]'}`} aria-hidden="true" />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {showItemRatingPrompt && !itemRatingsLoading && order.items.some((item, index) => Boolean(item.id) && !itemRatings[index]) && (
                   <div className="mt-4 rounded-2xl bg-[var(--muted)] p-4 text-left">
                     <p className="text-sm font-semibold text-[var(--ink)]">Would you also like to rate the items you ordered?</p>
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
