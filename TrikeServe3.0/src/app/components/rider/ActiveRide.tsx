@@ -33,6 +33,7 @@ import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { getProfileInitials } from "@/lib/profileInitials";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
 import { getShortestAvoidHighwaysRoadRoute } from "@/lib/roadRouting";
+import { buildTerminalRideRoute } from "@/lib/terminalRideRoute";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
 
@@ -81,6 +82,8 @@ interface ActiveRideData {
   restaurantName?: string;
   restaurantImage?: string;
   restaurantAddress?: string;
+  restaurantLat?: number;
+  restaurantLng?: number;
   restaurantSubtitle?: string;
   restaurantCuisine?: string;
   restaurantDeliveryTime?: string;
@@ -559,6 +562,8 @@ export default function ActiveRide() {
     name: string;
     subtitle: string | null;
     address: string | null;
+    latitude: number | null;
+    longitude: number | null;
     cuisine: string | null;
     deliveryTime: string | null;
     logoImage: string | null;
@@ -1266,6 +1271,31 @@ export default function ActiveRide() {
     Boolean(ride?.orderId || ride?.orderNumber) ||
     String(ride?.pickup || '').startsWith('DELIVERY');
 
+  const isDelivery = isDeliveryRide(rideData);
+  const deliveryPickupAddress = restaurantProfile?.address
+    || rideData?.restaurantAddress
+    || rideData?.pickupAddress
+    || null;
+  const taggedRestaurantName = String(rideData?.pickup || '')
+    .split('|')
+    .filter(part => !/^ORDER_(ID|NO):/i.test(part) && part !== 'DELIVERY')
+    .pop();
+  const deliveryPickupLabel = isDelivery
+    ? deliveryPickupAddress
+      || rideData?.restaurantName
+      || (restaurantProfile?.name !== 'Restaurant' ? restaurantProfile?.name : null)
+      || taggedRestaurantName
+      || 'Restaurant'
+    : rideData?.pickup;
+  const deliveryPickupCoordinates = isDelivery
+    ? coordinateFromValues(rideData?.restaurantLat, rideData?.restaurantLng)
+      || coordinateFromValues(restaurantProfile?.latitude, restaurantProfile?.longitude)
+      || coordinateFromValues(rideData?.pickupLat, rideData?.pickupLng)
+    : null;
+  const ridePickupCoordinates = isDelivery
+    ? deliveryPickupCoordinates
+    : coordinateFromValues(rideData?.pickupLat, rideData?.pickupLng);
+
   // Determine if we're heading to pickup or dropoff
   const isHeadingToPickup = rideData?.status === 'on-the-way' || rideData?.status === 'arrived';
   const isSharedRide = Boolean(rideData && (rideData.type === 'shared' || rideData.lobbyId));
@@ -1311,10 +1341,10 @@ export default function ActiveRide() {
   ]);
 
   // Load the route selected for this lobby. New bookings carry the route id on
-  // each passenger; older lobbies are matched to the plotted road that contains
-  // the most passenger destinations.
+  // each passenger; private ride requests carry it on the ride row. Older rides
+  // are matched to the plotted road that contains their destination.
   useEffect(() => {
-    if (!isSharedRide || !rideData?.lobbyId) {
+    if ((!isSharedRide && !isPrivateRide) || !rideData) {
       setSharedTerminalRoute(null);
       setSharedTerminalRouteColor(DEFAULT_ROUTE_COLOR);
       return;
@@ -1325,20 +1355,22 @@ export default function ActiveRide() {
       let terminalId = rideData.terminalId || null;
       let passengers = Array.isArray(rideData.passengerDetails) ? rideData.passengerDetails : [];
       try {
-        const { data: lobby } = await supabase
-          .from('shared_ride_lobbies')
-          .select('terminal_id, passengers_json')
-          .eq('id', rideData.lobbyId)
-          .maybeSingle();
-        if (lobby) {
-          terminalId = terminalId || lobby.terminal_id || null;
-          if (Array.isArray(lobby.passengers_json)) passengers = lobby.passengers_json;
-          else if (typeof lobby.passengers_json === 'string') {
-            try {
-              const parsed = JSON.parse(lobby.passengers_json);
-              if (Array.isArray(parsed)) passengers = parsed;
-            } catch {
-              // Keep the passenger details already carried by the active ride.
+        if (isSharedRide && rideData.lobbyId) {
+          const { data: lobby } = await supabase
+            .from('shared_ride_lobbies')
+            .select('terminal_id, passengers_json')
+            .eq('id', rideData.lobbyId)
+            .maybeSingle();
+          if (lobby) {
+            terminalId = terminalId || lobby.terminal_id || null;
+            if (Array.isArray(lobby.passengers_json)) passengers = lobby.passengers_json;
+            else if (typeof lobby.passengers_json === 'string') {
+              try {
+                const parsed = JSON.parse(lobby.passengers_json);
+                if (Array.isArray(parsed)) passengers = parsed;
+              } catch {
+                // Keep the passenger details already carried by the active ride.
+              }
             }
           }
         }
@@ -1418,6 +1450,7 @@ export default function ActiveRide() {
     return () => { cancelled = true; };
   }, [
     isSharedRide,
+    isPrivateRide,
     rideData?.id,
     rideData?.lobbyId,
     rideData?.terminalId,
@@ -1458,9 +1491,8 @@ export default function ActiveRide() {
     driverLocation?.lng,
   ]);
 
-  // Keep the planned private-trip road route visible to the driver during the
-  // approach and passenger phases. It uses the same endpoints and route policy
-  // as the customer map.
+  // Follow the terminal's saved route for the private ride, matching the path on
+  // the customer's map. The live driver-to-terminal leg remains separate.
   useEffect(() => {
     const pickup = coordinateFromValues(rideData?.pickupLat, rideData?.pickupLng);
     const dropoff = coordinateFromValues(rideData?.dropoffLat, rideData?.dropoffLng);
@@ -1470,27 +1502,13 @@ export default function ActiveRide() {
       rideData.status === 'completed' ||
       !pickup ||
       !dropoff ||
-      !isMapsLoaded ||
-      !(window as any).google?.maps
+      !sharedTerminalRoute
     ) {
       setPrivateRideRoadPath([]);
       return;
     }
 
-    if (distanceInMeters(pickup, dropoff) <= 5) {
-      setPrivateRideRoadPath([]);
-      return;
-    }
-
-    let cancelled = false;
-    setPrivateRideRoadPath([]);
-    void getShortestAvoidHighwaysRoadRoute(pickup, dropoff, import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').then(path => {
-      if (!cancelled) setPrivateRideRoadPath(path);
-    });
-
-    return () => {
-      cancelled = true;
-    };
+    setPrivateRideRoadPath(buildTerminalRideRoute(pickup, dropoff, sharedTerminalRoute.points));
   }, [
     rideData?.id,
     rideData?.status,
@@ -1499,24 +1517,28 @@ export default function ActiveRide() {
     rideData?.dropoffLat,
     rideData?.dropoffLng,
     isPrivateRide,
-    isMapsLoaded,
+    sharedTerminalRoute,
   ]);
 
   // For delivery rides: geocode the restaurant pickup address if lat/lng are missing
   useEffect(() => {
     if (!rideData) return;
-    const isDelivery = Boolean(rideData.orderId || rideData.orderNumber) || String(rideData.pickup || '').startsWith('DELIVERY');
-    if (!isDelivery) return;
-    if (rideData.pickupLat && rideData.pickupLng) return; // Already has coordinates
-    const address = rideData.pickupAddress || rideData.pickup;
+    if (!isDeliveryRide(rideData)) return;
+    if (
+      coordinateFromValues(rideData.restaurantLat, rideData.restaurantLng)
+      || coordinateFromValues(rideData.pickupLat, rideData.pickupLng)
+      || coordinateFromValues(restaurantProfile?.latitude, restaurantProfile?.longitude)
+    ) return; // Use a saved restaurant pin when available.
+    const address = restaurantProfile?.address || rideData.restaurantAddress || rideData.pickupAddress;
     if (!address) return;
 
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
     if (!apiKey) return;
+    let cancelled = false;
     fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`)
       .then(res => res.json())
       .then(data => {
-        if (data.status === 'OK' && data.results?.[0]) {
+        if (!cancelled && data.status === 'OK' && data.results?.[0]) {
           const loc = data.results[0].geometry.location;
           const updated = { ...rideData, pickupLat: loc.lat, pickupLng: loc.lng };
           setRideData(updated);
@@ -1524,7 +1546,8 @@ export default function ActiveRide() {
         }
       })
       .catch(() => {});
-  }, [rideData?.pickupAddress, rideData?.pickup, rideData?.pickupLat, rideData?.pickupLng]);
+    return () => { cancelled = true; };
+  }, [rideData?.id, rideData?.orderId, rideData?.restaurantAddress, rideData?.pickupAddress, rideData?.restaurantLat, rideData?.restaurantLng, rideData?.pickupLat, rideData?.pickupLng, restaurantProfile?.address, restaurantProfile?.latitude, restaurantProfile?.longitude]);
 
   useEffect(() => {
     if (!rideData || !isMapsLoaded || !(window as any).google) return;
@@ -1552,8 +1575,9 @@ export default function ActiveRide() {
     let routeTimer: number | undefined;
 
     const targetIsTerminal = isSharedRide || isHeadingToPickup;
-    const targetLat = targetIsTerminal ? rideData.pickupLat : rideData.dropoffLat;
-    const targetLng = targetIsTerminal ? rideData.pickupLng : rideData.dropoffLng;
+    const targetPickup = ridePickupCoordinates;
+    const targetLat = targetIsTerminal ? targetPickup?.lat : rideData.dropoffLat;
+    const targetLng = targetIsTerminal ? targetPickup?.lng : rideData.dropoffLng;
     const dest = targetLat != null && targetLng != null
       ? { lat: Number(targetLat), lng: Number(targetLng) }
       : null;
@@ -1605,7 +1629,7 @@ export default function ActiveRide() {
       cancelled = true;
       window.clearTimeout(routeTimer);
     };
-  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup, isSharedRide, isPrivateRide]);
+  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, deliveryPickupCoordinates?.lat, deliveryPickupCoordinates?.lng, isMapsLoaded, isHeadingToPickup, isSharedRide, isPrivateRide]);
 
   // Match the accept-preview map: zoom to the road route once for each leg so
   // the route is in view when the rider enters the restaurant or customer phase.
@@ -1676,6 +1700,8 @@ export default function ActiveRide() {
       name: fallbackName,
       subtitle: rideData.restaurantSubtitle || null,
       address: rideData.restaurantAddress || rideData.pickupAddress || null,
+      latitude: rideData.restaurantLat ?? null,
+      longitude: rideData.restaurantLng ?? null,
       cuisine: rideData.restaurantCuisine || null,
       deliveryTime: rideData.restaurantDeliveryTime || null,
       logoImage: rideData.restaurantImage || null,
@@ -1696,7 +1722,7 @@ export default function ActiveRide() {
       if (order?.restaurant_email) {
         const { data } = await supabase
           .from('restaurants')
-          .select('business_user_id, name, subtitle, address, cuisine, delivery_time, logo_image')
+          .select('business_user_id, name, subtitle, address, cuisine, delivery_time, logo_image, latitude, longitude')
           .eq('id', order.restaurant_email)
           .maybeSingle();
         restaurant = data;
@@ -1706,7 +1732,7 @@ export default function ActiveRide() {
       if (!restaurant && businessUserId) {
         const { data } = await supabase
           .from('restaurants')
-          .select('business_user_id, name, subtitle, address, cuisine, delivery_time, logo_image')
+          .select('business_user_id, name, subtitle, address, cuisine, delivery_time, logo_image, latitude, longitude')
           .eq('business_user_id', businessUserId)
           .maybeSingle();
         restaurant = data;
@@ -1718,6 +1744,8 @@ export default function ActiveRide() {
         name: restaurant?.name || fallbackName,
         subtitle: restaurant?.subtitle || rideData.restaurantSubtitle || null,
         address: restaurant?.address || rideData.restaurantAddress || rideData.pickupAddress || null,
+        latitude: restaurant?.latitude == null ? rideData.restaurantLat ?? null : Number(restaurant.latitude),
+        longitude: restaurant?.longitude == null ? rideData.restaurantLng ?? null : Number(restaurant.longitude),
         cuisine: restaurant?.cuisine || rideData.restaurantCuisine || null,
         deliveryTime: restaurant?.delivery_time || rideData.restaurantDeliveryTime || null,
         logoImage: restaurant?.logo_image || rideData.restaurantImage || null,
@@ -3015,12 +3043,45 @@ export default function ActiveRide() {
                 map.addListener('zoom_changed', stopFollowingOnZoom);
               }}
             />
+          ) : isPrivateRide ? (
+            <SharedRideRouteMap
+              mapContainerStyle={{ width: '100%', height: '100%' }}
+              center={mapCenter}
+              zoom={INITIAL_MAP_ZOOM}
+              options={{
+                disableDefaultUI: true,
+                gestureHandling: 'greedy',
+                disableDoubleClickZoom: true,
+              }}
+              driverLocation={driverLocation}
+              terminalPosition={coordinateFromValues(rideData.pickupLat, rideData.pickupLng)}
+              terminalMarkerColor={pickupTerminalMarkerColor}
+              terminalRouteColor={sharedTerminalRouteColor}
+              terminalRoutePaths={privateRideRoadPath.length > 1 ? [privateRideRoadPath] : []}
+              driverToTerminalRoutePath={isHeadingToPickup ? routePath || [] : []}
+              dropoffs={rideData.dropoffLat != null && rideData.dropoffLng != null ? [{
+                id: rideData.id,
+                position: {
+                  lat: Number(rideData.dropoffLat),
+                  lng: Number(rideData.dropoffLng),
+                },
+                title: 'Customer drop-off',
+                color: RIDE_MAP_DROPOFF_COLOR,
+              }] : []}
+              onLoad={(map) => {
+                mapRef.current = map;
+                appliedHeadingRef.current = 0;
+                map.addListener('dragstart', stopFollowingOnDrag);
+                map.addListener('zoom_changed', stopFollowingOnZoom);
+              }}
+              onUnmount={() => { mapRef.current = null; }}
+            />
           ) : isDeliveryRide(rideData) ? (
             <DeliveryTrackingMap
               mapContainerStyle={{ width: '100%', height: '100%' }}
               camera={{ mode: 'controlled', center: mapCenter, zoom: INITIAL_MAP_ZOOM }}
               driverLocation={driverLocation}
-              restaurantLocation={coordinateFromValues(rideData.pickupLat, rideData.pickupLng)}
+              restaurantLocation={deliveryPickupCoordinates}
               customerLocation={coordinateFromValues(rideData.dropoffLat, rideData.dropoffLng)}
               routePath={routePath}
               isHeadingToRestaurant={isHeadingToPickup}
@@ -3074,9 +3135,9 @@ export default function ActiveRide() {
             {/* Both endpoints stay pinned for the whole ride, not just whichever
                 one is next. Showing only the active leg hid the destination from
                 the driver, so there was nothing on screen to steer toward. */}
-            {rideData.pickupLat && (
+            {ridePickupCoordinates && (
               <Marker
-                position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }}
+                position={ridePickupCoordinates}
                 icon={isDeliveryRide(rideData) ? createRestaurantMarkerIcon() : terminalMarkerIcon(pickupTerminalMarkerColor)}
                 title={isDeliveryRide(rideData) ? "Restaurant pickup" : "Pickup"}
                 zIndex={isHeadingToPickup ? 90 : 70}
@@ -3175,7 +3236,7 @@ export default function ActiveRide() {
           <div className="absolute left-3 bottom-3 flex flex-col gap-1.5 pointer-events-none">
             <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold shadow-md">
               <span className="size-2.5 rounded-full" style={{ background: RIDE_MAP_PICKUP_COLOR }} aria-hidden="true" />
-              Pickup · {rideData.pickup}
+              Pickup · {deliveryPickupLabel}
             </span>
             {isSharedRide && sharedDropoffStops.length > 0
               ? sharedDropoffStops.map(stop => (
@@ -3551,7 +3612,7 @@ export default function ActiveRide() {
                   <div className={`w-2 h-2 rounded-full mt-1.5 ${isHeadingToPickup ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
                   <div className="flex-1 text-sm">
                     <p className="text-[var(--muted-foreground)] text-xs">Pickup</p>
-                    <p className="font-semibold">{rideData.pickup}</p>
+                    <p className="font-semibold">{deliveryPickupLabel}</p>
                   </div>
                   {isHeadingToPickup && <span className="text-[10px] bg-[var(--success)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
                 </div>

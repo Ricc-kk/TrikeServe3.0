@@ -25,6 +25,7 @@ import RideChatOverlay from "../rider/RideChatOverlay";
 import { MarkerF, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
 import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
 import MapTypeToggle from "../ui/MapTypeToggle";
+import SharedRideRouteMap from "../ui/SharedRideRouteMap";
 import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import { createDropoffMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
@@ -33,6 +34,7 @@ import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, 
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, isPointWithinAnyTerminalBorder, isPointInPolygon, isPointOnRoadCorridor, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, geocodeAddress, logAudit, haversineDistanceMeters, type LatLngPoint } from "@/lib/supabase";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes } from "@/lib/terminalRoutes";
+import { buildTerminalRideRoute } from "@/lib/terminalRideRoute";
 import { TerminalIconGlyph, terminalMarkerIcon, normalizeTerminalColor, normalizeRouteColor, normalizeBorderColor } from "../ui/TerminalIcon";
 import { Tricycle } from "../ui/Tricycle";
 import { computeRideFare, computeSharedRideFarePerPassenger, normalizeRates, terminalRates, privateRideRates, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
@@ -2672,17 +2674,21 @@ export default function CustomerHome() {
      navigate,
    ]);
 
-   // Keep the customer's live road route aligned with the driver's next stop:
-   // pickup before boarding, then this customer's destination for the ride.
+   // Keep the live private-ride approach route pointed at the terminal. Once the
+   // customer is picked up, the saved terminal route becomes the ride path.
    useEffect(() => {
      const isLiveRide = ['driver-found', 'picking-up', 'in-transit'].includes(visibleRideStatus || '');
      if (activeShareRideMapDetails.isActive || !rideStateBelongsToCurrentUser || !isLiveRide) {
        setDriverRoutePath([]);
        return;
      }
+     if (isPrivateRide && hasPassengerBeenPickedUp) {
+       setDriverRoutePath([]);
+       return;
+     }
      const destination = hasPassengerBeenPickedUp
        ? isPrivateRide ? activeRideRequestDropoffCoords || dropoffCoords : dropoffCoords
-       : isPrivateRide ? activeRideRequestPickupCoords || pickupCoords : pickupCoords;
+       : isPrivateRide ? activeRideRequestPickupCoords || activeRideTerminalCenter || pickupCoords : pickupCoords;
      if (!driverLocation || !destination || !isMapsLoaded || !(window as any).google) {
        setDriverRoutePath([]);
        return;
@@ -2703,7 +2709,7 @@ export default function CustomerHome() {
      return () => {
        active = false;
      };
-   }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, driverLocation, pickupCoords, dropoffCoords, activeRideRequestPickupCoords, activeRideRequestDropoffCoords, isMapsLoaded, visibleRideStatus, rideStateBelongsToCurrentUser, isDeliveryRide, isPrivateRide]);
+   }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, driverLocation, pickupCoords, dropoffCoords, activeRideTerminalCenter?.lat, activeRideTerminalCenter?.lng, activeRideRequestPickupCoords, activeRideRequestDropoffCoords, isMapsLoaded, visibleRideStatus, rideStateBelongsToCurrentUser, isDeliveryRide, isPrivateRide]);
 
    // Delivery drop-off legs use the shortest available road route while
    // avoiding highway travel.
@@ -3817,8 +3823,7 @@ export default function CustomerHome() {
     if (!activeMapTerminalId) return [];
     const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId);
 
-    // Keep the full terminal route network visible during private rides with
-    // one consistent style for every route.
+    // The dedicated private ride map draws only its saved route itinerary.
     if ((isActivePrivateRidePage || isPrivateRide) && !isActiveShareRideMap) {
       return terminalRoutes;
     }
@@ -3847,15 +3852,52 @@ export default function CustomerHome() {
     routePreviewTerminalId,
     selectedTerminalRouteId,
   ]);
-  const isPrivateRideMap = (isActivePrivateRidePage || isPrivateRide) && !isActiveShareRideMap;
+  const isPrivateRideMap = (isActivePrivateRidePage || (isPrivateRide && rideStateBelongsToCurrentUser && Boolean(currentRequestId)))
+    && !isActiveShareRideMap;
   const isPrivateRideSearching = isPrivateRideMap && rideStateBelongsToCurrentUser && visibleRideStatus === 'searching';
   const isPrivateRideInProgress = isPrivateRideMap && rideStateBelongsToCurrentUser &&
     ['driver-found', 'picking-up', 'in-transit'].includes(visibleRideStatus || '');
-  const privateRideRouteOrigin = isPrivateRideSearching
-    ? activeRideTerminalCenter || activeRideRequestPickupCoords || pickupCoords
-    : activeRideRequestPickupCoords || pickupCoords;
+  const privateRideRouteOrigin = activeRideRequestPickupCoords || activeRideTerminalCenter || pickupCoords;
   const privateRideDestinationCoords = activeRideRequestDropoffCoords || dropoffCoords;
   const shouldShowPrivateRideRoute = isPrivateRideSearching || isPrivateRideInProgress;
+  const privateRideSelectedRoute = useMemo(() => {
+    if (!activeRideTerminalId) return null;
+    const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === activeRideTerminalId);
+    const requestedRouteId = String(
+      activeRideRequest?.route_id
+      || activeRideRequest?.selected_route_id
+      || (selectedTerminalId === activeRideTerminalId ? selectedTerminalRouteId : '')
+      || '',
+    );
+    const savedRoute = terminalRoutes.find(route =>
+      route.id === requestedRouteId
+      || route.routeId === requestedRouteId
+      || route.id === `${activeRideTerminalId}::${requestedRouteId}`,
+    );
+    if (savedRoute) return savedRoute;
+
+    const matchingDropoffRoute = privateRideDestinationCoords
+      ? terminalRoutes.find(route => route.enabled && isPointOnRoadCorridor(
+          privateRideDestinationCoords.lat,
+          privateRideDestinationCoords.lng,
+          route.points,
+          route.bufferM,
+        ))
+      : null;
+    return matchingDropoffRoute || terminalRoutes.find(route => route.enabled) || terminalRoutes[0] || null;
+  }, [
+    activeRideTerminalId,
+    activeRideRequest?.route_id,
+    activeRideRequest?.selected_route_id,
+    mapTerminalRoutes,
+    privateRideDestinationCoords?.lat,
+    privateRideDestinationCoords?.lng,
+    selectedTerminalId,
+    selectedTerminalRouteId,
+  ]);
+  const privateRideRouteColor = normalizeRouteColor(
+    terminals.find(terminal => terminal.id === activeRideTerminalId)?.route_color,
+  );
   const activeDestinationRoutePath = isPrivateRideMap && !isDeliveryRide ? privateRideRoadPath : destinationRoutePath;
 
   // Fit the same road geometry the driver uses, including the driver's live
@@ -3868,7 +3910,7 @@ export default function CustomerHome() {
     if (!isMapsLoaded || !customerMapReady || !privateRideRouteOrigin || !privateRideDestinationCoords) return;
 
     const hasPrivateRideRoadPath = privateRideRoadPath.length > 1;
-    const hasDriverRoute = driverRoutePath.length > 1;
+    const hasDriverRoute = driverRoutePath.length > 1 && !hasPassengerBeenPickedUp;
 
     const fitKey = [
       currentRequestId || '',
@@ -3879,6 +3921,7 @@ export default function CustomerHome() {
       privateRideDestinationCoords.lng,
       hasPrivateRideRoadPath ? 'road-ready' : 'road-pending',
       hasDriverRoute ? 'driver-route-ready' : 'driver-route-pending',
+      isPrivateRideInProgress && driverLocation ? 'driver-location-ready' : 'driver-location-pending',
     ].join(':');
     if (activePrivateRideMapFitRef.current === fitKey) return;
 
@@ -3890,6 +3933,7 @@ export default function CustomerHome() {
     const routePoints = [
       ...(hasPrivateRideRoadPath ? privateRideRoadPath : [privateRideRouteOrigin, privateRideDestinationCoords]),
       ...(isPrivateRideInProgress && hasDriverRoute ? driverRoutePath : []),
+      ...(isPrivateRideInProgress && driverLocation ? [driverLocation] : []),
     ];
     routePoints.forEach(point => bounds.extend(point));
     if (!hasDriverRoute && haversineDistanceMeters(privateRideRouteOrigin, privateRideDestinationCoords) < 100) {
@@ -3910,35 +3954,26 @@ export default function CustomerHome() {
     privateRideRoadPath,
     driverRoutePath,
     isPrivateRideInProgress,
+    driverLocation,
+    hasPassengerBeenPickedUp,
   ]);
 
-  // Match /rider/active-ride's private route exactly: route from the request's
-  // pickup to its drop-off, using the same road router and avoiding highways.
-  // While searching, the terminal is the pickup; once accepted, the request row
-  // is the source of truth for both endpoints.
+  // Keep the saved terminal road as the private ride's planned path, then connect
+  // it to the customer's destination. Customer and driver use this same geometry.
   useEffect(() => {
     if (!isPrivateRideMap || isDeliveryRide || !shouldShowPrivateRideRoute) {
       setPrivateRideRoadPath(current => current.length ? [] : current);
       return;
     }
-    if (!privateRideRouteOrigin || !privateRideDestinationCoords || !isMapsLoaded || !(window as any).google) {
+    if (!privateRideRouteOrigin || !privateRideDestinationCoords || !privateRideSelectedRoute) {
       setPrivateRideRoadPath(current => current.length ? [] : current);
       return;
     }
-    if (haversineDistanceMeters(privateRideRouteOrigin, privateRideDestinationCoords) <= 5) {
-      setPrivateRideRoadPath(current => current.length ? [] : current);
-      return;
-    }
-
-    let cancelled = false;
-    setPrivateRideRoadPath([]);
-    void getShortestAvoidHighwaysRoadRoute(privateRideRouteOrigin, privateRideDestinationCoords, GOOGLE_MAPS_API_KEY).then(path => {
-      if (!cancelled) setPrivateRideRoadPath(path.length > 1 ? path : []);
-    });
-
-    return () => {
-      cancelled = true;
-    };
+    setPrivateRideRoadPath(buildTerminalRideRoute(
+      privateRideRouteOrigin,
+      privateRideDestinationCoords,
+      privateRideSelectedRoute.points,
+    ));
   }, [
     isPrivateRideMap,
     isDeliveryRide,
@@ -3947,7 +3982,7 @@ export default function CustomerHome() {
     privateRideRouteOrigin?.lng,
     privateRideDestinationCoords?.lat,
     privateRideDestinationCoords?.lng,
-    isMapsLoaded,
+    privateRideSelectedRoute,
   ]);
   useEffect(() => {
     if (!isBookingPage) {
@@ -4409,6 +4444,43 @@ const getPrice = () => {
             <div className="w-full h-full flex items-center justify-center bg-[var(--muted)]">
               <p className="text-sm text-[var(--muted-foreground)]">Loading map...</p>
             </div>
+          ) : isPrivateRideMap ? (
+            <SharedRideRouteMap
+              mapContainerStyle={{ width: '100%', height: '100%' }}
+              center={mapCenter}
+              zoom={15}
+              driverLocation={isPrivateRideInProgress ? driverLocation : null}
+              terminalPosition={privateRideRouteOrigin}
+              terminalMarkerColor={activeRideTerminalMarkerColor}
+              terminalRouteColor={privateRideRouteColor}
+              terminalRoutePaths={privateRideRoadPath.length > 1 ? [privateRideRoadPath] : []}
+              driverToTerminalRoutePath={!hasPassengerBeenPickedUp ? driverRoutePath : []}
+              dropoffs={privateRideDestinationCoords ? [{
+                id: currentRequestId || 'private-ride-dropoff',
+                position: privateRideDestinationCoords,
+                title: 'Your drop-off',
+                color: RIDE_MAP_DROPOFF_COLOR,
+              }] : []}
+              options={{
+                disableDefaultUI: true,
+                zoomControl: false,
+                fullscreenControl: false,
+                streetViewControl: false,
+                mapTypeControl: false,
+                clickableIcons: false,
+                draggable: true,
+                gestureHandling: 'greedy',
+                disableDoubleClickZoom: true,
+              }}
+              onLoad={(map) => {
+                customerMapRef.current = map;
+                setCustomerMapReady(true);
+              }}
+              onUnmount={() => {
+                customerMapRef.current = null;
+                setCustomerMapReady(false);
+              }}
+            />
           ) : (
            <GoogleMap
              mapContainerStyle={{ width: "100%", height: "100%" }}

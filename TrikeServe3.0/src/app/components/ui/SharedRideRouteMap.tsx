@@ -35,9 +35,9 @@ type SharedRideRouteMapProps = {
 };
 
 /**
- * Shared live map used by the customer's active share ride and the driver's
- * active ride. Both sides draw the terminal's saved road and the live approach
- * leg with the same map controls, line styling, and markers.
+ * Shared live map used by customer and driver ride tracking. Both sides draw
+ * the terminal's saved road and live approach leg with the same map controls,
+ * line styling, and markers.
  */
 export default function SharedRideRouteMap({
   mapContainerStyle,

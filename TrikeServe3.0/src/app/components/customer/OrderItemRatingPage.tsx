@@ -300,8 +300,8 @@ export default function OrderItemRatingPage() {
                   const selectedRating = ratings[item.index] || 0;
                   const isSaved = selectedRating > 0 && savedRatings[item.index] === selectedRating;
                   return (
-                    <Card key={`${item.id || item.name}-${item.index}`} className="p-3">
-                      <div className="flex items-start gap-3">
+                    <Card key={`${item.id || item.name}-${item.index}`} className="items-start p-3 text-left">
+                      <div className="flex w-full items-start justify-start gap-3 text-left">
                         {item.image ? (
                           <ImageWithFallback
                             src={item.image}
@@ -319,7 +319,7 @@ export default function OrderItemRatingPage() {
                           {!item.id && <p className="mt-1 text-xs text-[var(--error)]">This item cannot be rated.</p>}
                         </div>
                       </div>
-                      <div role="group" aria-label={`Rate ${item.name}`} className="mt-3 flex justify-center gap-2">
+                      <div role="group" aria-label={`Rate ${item.name}`} className="mt-3 flex w-full justify-start gap-2">
                         {[1, 2, 3, 4, 5].map((star) => (
                           <button
                             key={star}
