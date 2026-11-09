@@ -33,7 +33,7 @@ import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { getProfileInitials } from "@/lib/profileInitials";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
 import { getShortestAvoidHighwaysRoadRoute } from "@/lib/roadRouting";
-import { buildTerminalRideRoute } from "@/lib/terminalRideRoute";
+import { getTerminalRideRoutePaths } from "@/lib/terminalRideRoute";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
 
@@ -458,6 +458,7 @@ export default function ActiveRide() {
 
   const [rideData, setRideData] = useState<ActiveRideData | null>(null);
   const [pickupTerminalMarkerColor, setPickupTerminalMarkerColor] = useState(DEFAULT_TERMINAL_COLOR);
+  const [pickupTerminalLocation, setPickupTerminalLocation] = useState<{ id: string; position: RideCoordinate | null } | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   // Drives the inline location banner; null while the device can give us a position.
@@ -466,7 +467,8 @@ export default function ActiveRide() {
   const [sharedDropoffRoutes, setSharedDropoffRoutes] = useState<SharedDropoffRoute[]>([]);
   const [sharedTerminalRoute, setSharedTerminalRoute] = useState<TerminalRoute | null>(null);
   const [sharedTerminalRouteColor, setSharedTerminalRouteColor] = useState(DEFAULT_ROUTE_COLOR);
-  const [privateRideRoadPath, setPrivateRideRoadPath] = useState<RideCoordinate[]>([]);
+  const [privateRideRoutePaths, setPrivateRideRoutePaths] = useState<RideCoordinate[][]>([]);
+  const privateRideRoadPath = useMemo(() => privateRideRoutePaths.flat(), [privateRideRoutePaths]);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   // Whether the camera is locked to the driver. Defaults on so the opening view is
   // the driver, and turns off by itself the first time they pan or zoom.
@@ -704,14 +706,24 @@ export default function ActiveRide() {
     const terminalId = rideData?.terminalId || user?.terminalId;
     if (!terminalId) {
       setPickupTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
+      setPickupTerminalLocation(null);
       return;
     }
 
     let active = true;
     supabaseHelpers.getTerminalGeofence(terminalId).then(({ data }) => {
-      if (active) setPickupTerminalMarkerColor(normalizeTerminalColor(data?.marker_color));
+      if (active) {
+        setPickupTerminalMarkerColor(normalizeTerminalColor(data?.marker_color));
+        setPickupTerminalLocation({
+          id: terminalId,
+          position: coordinateFromValues(data?.center_lat, data?.center_lng),
+        });
+      }
     }).catch(() => {
-      if (active) setPickupTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
+      if (active) {
+        setPickupTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
+        setPickupTerminalLocation(null);
+      }
     });
 
     return () => {
@@ -1300,6 +1312,11 @@ export default function ActiveRide() {
   const isHeadingToPickup = rideData?.status === 'on-the-way' || rideData?.status === 'arrived';
   const isSharedRide = Boolean(rideData && (rideData.type === 'shared' || rideData.lobbyId));
   const isPrivateRide = Boolean(rideData && !isSharedRide && !isDeliveryRide(rideData));
+  const privateRideTerminalPosition = (
+    pickupTerminalLocation?.id === (rideData?.terminalId || user?.terminalId)
+      ? pickupTerminalLocation?.position
+      : null
+  ) || ridePickupCoordinates;
 
   // Shared passengers have separate destinations and fares, so keep a payment
   // prompt for each passenger who has been dropped off but not paid.
@@ -1491,32 +1508,45 @@ export default function ActiveRide() {
     driverLocation?.lng,
   ]);
 
-  // Follow the terminal's saved route for the private ride, matching the path on
-  // the customer's map. The live driver-to-terminal leg remains separate.
+  // Follow the saved terminal road, with road directions for the connections
+  // to the terminal and the actual drop-off, exactly as on the customer's map.
   useEffect(() => {
-    const pickup = coordinateFromValues(rideData?.pickupLat, rideData?.pickupLng);
+    const pickup = privateRideTerminalPosition;
     const dropoff = coordinateFromValues(rideData?.dropoffLat, rideData?.dropoffLng);
     if (
       !rideData ||
       !isPrivateRide ||
+      !isMapsLoaded ||
       rideData.status === 'completed' ||
       !pickup ||
-      !dropoff ||
-      !sharedTerminalRoute
+      !dropoff
     ) {
-      setPrivateRideRoadPath([]);
+      setPrivateRideRoutePaths([]);
       return;
     }
 
-    setPrivateRideRoadPath(buildTerminalRideRoute(pickup, dropoff, sharedTerminalRoute.points));
+    let active = true;
+    setPrivateRideRoutePaths([]);
+    void getTerminalRideRoutePaths(
+      pickup,
+      dropoff,
+      sharedTerminalRoute?.points,
+      (origin, destination) => getShortestAvoidHighwaysRoadRoute(
+        origin, destination, import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
+      ),
+    ).then(paths => {
+      if (active) setPrivateRideRoutePaths(paths);
+    });
+    return () => { active = false; };
   }, [
     rideData?.id,
     rideData?.status,
-    rideData?.pickupLat,
-    rideData?.pickupLng,
+    privateRideTerminalPosition?.lat,
+    privateRideTerminalPosition?.lng,
     rideData?.dropoffLat,
     rideData?.dropoffLng,
     isPrivateRide,
+    isMapsLoaded,
     sharedTerminalRoute,
   ]);
 
@@ -1554,7 +1584,7 @@ export default function ActiveRide() {
 
     const phase = isSharedRide
       ? 'shared-terminal'
-      : isHeadingToPickup ? 'restaurant' : 'customer';
+      : isPrivateRide ? 'private-terminal' : isHeadingToPickup ? 'restaurant' : 'customer';
     const phaseKey = `${rideData.id}:${phase}`;
     if (routePhaseRef.current !== phaseKey) {
       // Remove the previous single-destination leg when the active destination changes.
@@ -1562,20 +1592,13 @@ export default function ActiveRide() {
       setRoutePath(null);
     }
 
-    if (isPrivateRide && !isHeadingToPickup) {
-      // The private drop-off leg is drawn from the driver's live GPS position
-      // along the selected terminal route below, not from Google Directions.
-      setRoutePath(null);
-      return;
-    }
-
     let cancelled = false;
     let inFlight = false;
     let hasRoute = false;
     let routeTimer: number | undefined;
 
-    const targetIsTerminal = isSharedRide || isHeadingToPickup;
-    const targetPickup = ridePickupCoordinates;
+    const targetIsTerminal = isSharedRide || isPrivateRide || isHeadingToPickup;
+    const targetPickup = isPrivateRide ? privateRideTerminalPosition : ridePickupCoordinates;
     const targetLat = targetIsTerminal ? targetPickup?.lat : rideData.dropoffLat;
     const targetLng = targetIsTerminal ? targetPickup?.lng : rideData.dropoffLng;
     const dest = targetLat != null && targetLng != null
@@ -1629,7 +1652,7 @@ export default function ActiveRide() {
       cancelled = true;
       window.clearTimeout(routeTimer);
     };
-  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, deliveryPickupCoordinates?.lat, deliveryPickupCoordinates?.lng, isMapsLoaded, isHeadingToPickup, isSharedRide, isPrivateRide]);
+  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, deliveryPickupCoordinates?.lat, deliveryPickupCoordinates?.lng, privateRideTerminalPosition?.lat, privateRideTerminalPosition?.lng, isMapsLoaded, isHeadingToPickup, isSharedRide, isPrivateRide]);
 
   // Match the accept-preview map: zoom to the road route once for each leg so
   // the route is in view when the rider enters the restaurant or customer phase.
@@ -1646,19 +1669,18 @@ export default function ActiveRide() {
       isHeadingToPickup ? 'restaurant' : 'customer',
       isSharedRide && hasPickupRoute ? 'terminal-approach-route' : '',
       isSharedRide && sharedDropoffRoutes.length > 0 ? `selected-route-${sharedDropoffRoutes.length}` : '',
-      isPrivateRide && isHeadingToPickup && hasPickupRoute ? 'pickup-route' : '',
+      isPrivateRide && hasPickupRoute ? 'terminal-approach-route' : '',
       isPrivateRide && hasPrivateDropoffRoute ? 'dropoff-route' : '',
     ].join(':');
     if (fittedRoutePhaseRef.current === phaseKey) return;
 
     const privateDropoffPosition = coordinateFromValues(rideData.dropoffLat, rideData.dropoffLng);
     const routePoints = isPrivateRide
-      ? isHeadingToPickup
-        ? [...privateRideRoadPath, ...pickupRoutePoints]
-        : [
-            ...privateRideRoadPath,
-            ...(privateDropoffPosition ? [privateDropoffPosition] : []),
-          ]
+      ? [
+          ...privateRideRoadPath,
+          ...pickupRoutePoints,
+          ...(privateDropoffPosition ? [privateDropoffPosition] : []),
+        ]
       : isSharedRide
         ? [
             ...pickupRoutePoints,
@@ -3054,11 +3076,11 @@ export default function ActiveRide() {
                 disableDoubleClickZoom: true,
               }}
               driverLocation={driverLocation}
-              terminalPosition={coordinateFromValues(rideData.pickupLat, rideData.pickupLng)}
+              terminalPosition={privateRideTerminalPosition}
               terminalMarkerColor={pickupTerminalMarkerColor}
               terminalRouteColor={sharedTerminalRouteColor}
-              terminalRoutePaths={privateRideRoadPath.length > 1 ? [privateRideRoadPath] : []}
-              driverToTerminalRoutePath={isHeadingToPickup ? routePath || [] : []}
+              terminalRoutePaths={privateRideRoutePaths}
+              driverToTerminalRoutePath={routePath || []}
               dropoffs={rideData.dropoffLat != null && rideData.dropoffLng != null ? [{
                 id: rideData.id,
                 position: {
@@ -3176,11 +3198,11 @@ export default function ActiveRide() {
               />
             ))}
 
-            {/* Keep the shortest road route to the passenger's drop-off visible
-                while the driver approaches pickup and throughout the ride. */}
-            {isPrivateRide && privateRideRoadPath.length > 1 && (
+            {/* Keep the selected road and its routed connectors separate. */}
+            {isPrivateRide && privateRideRoutePaths.map((path, index) => (
               <Polyline
-                path={privateRideRoadPath}
+                key={`private-route-${index}`}
+                path={path}
                 options={{
                   strokeColor: RIDE_MAP_DROPOFF_COLOR,
                   strokeWeight: 6,
@@ -3188,7 +3210,7 @@ export default function ActiveRide() {
                   zIndex: 20,
                 }}
               />
-            )}
+            ))}
 
             {/* Road route for the current leg from Routes API. */}
             {routePath && (!isSharedRide || isHeadingToPickup) && (!isPrivateRide || isHeadingToPickup) && (

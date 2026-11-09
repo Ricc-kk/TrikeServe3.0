@@ -98,12 +98,8 @@ function slicePath(
   return result;
 }
 
-/**
- * Builds a private ride itinerary from the terminal, along its selected saved
- * route, then to the customer's drop-off. The terminal and drop-off connectors
- * follow the same projection behavior used by the share ride map.
- */
-export function buildTerminalRideRoute(
+/** Select the portion of the saved road between the terminal and drop-off. */
+function buildTerminalRouteSegment(
   terminal: TerminalRideRoutePoint | null | undefined,
   dropoff: TerminalRideRoutePoint | null | undefined,
   selectedRoute: TerminalRideRoutePoint[] | null | undefined,
@@ -138,7 +134,48 @@ export function buildTerminalRideRoute(
       : reverse;
   if (!chosen?.routeSegment.length) return [];
 
-  return [terminal, ...chosen.routeSegment, dropoff].filter((point, index, points) =>
+  return chosen.routeSegment.filter((point, index, points) =>
     index === 0 || distanceMeters(points[index - 1], point) > 1,
   );
+}
+
+type RoadRouteResolver = (
+  origin: TerminalRideRoutePoint,
+  destination: TerminalRideRoutePoint,
+) => Promise<TerminalRideRoutePoint[]>;
+
+/**
+ * Follow the saved terminal road, using road directions to enter it and to
+ * reach the actual drop-off. Keep the legs separate so a missing connector
+ * never becomes a straight line across buildings or hides the saved route.
+ */
+export async function getTerminalRideRoutePaths(
+  terminal: TerminalRideRoutePoint | null | undefined,
+  dropoff: TerminalRideRoutePoint | null | undefined,
+  selectedRoute: TerminalRideRoutePoint[] | null | undefined,
+  resolveRoadRoute: RoadRouteResolver,
+): Promise<TerminalRideRoutePoint[][]> {
+  if (!terminal || !dropoff) return [];
+
+  const roadLeg = async (origin: TerminalRideRoutePoint, destination: TerminalRideRoutePoint) => {
+    if (distanceMeters(origin, destination) <= 1) return [];
+    try {
+      const path = await resolveRoadRoute(origin, destination);
+      return path.length > 1 ? path : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const savedRoad = buildTerminalRouteSegment(terminal, dropoff, selectedRoute);
+  if (savedRoad.length === 0) {
+    const path = await roadLeg(terminal, dropoff);
+    return path.length > 1 ? [path] : [];
+  }
+
+  const [toSavedRoad, toDropoff] = await Promise.all([
+    roadLeg(terminal, savedRoad[0]),
+    roadLeg(savedRoad[savedRoad.length - 1], dropoff),
+  ]);
+  return [toSavedRoad, savedRoad, toDropoff].filter(path => path.length > 1);
 }
