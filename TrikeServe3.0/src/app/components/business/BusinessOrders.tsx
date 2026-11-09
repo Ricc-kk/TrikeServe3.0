@@ -18,12 +18,8 @@ import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext"
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { getOrderProgress, isRiderHeadingToRestaurant } from "@/lib/orderProgress";
 import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
-import { MarkerF, Polyline } from "@react-google-maps/api";
-import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
-import MapTypeToggle from "../ui/MapTypeToggle";
+import DeliveryTrackingMap from "../ui/DeliveryTrackingMap";
 import useMapLoader from "@/lib/mapLoader";
-import { createDropoffMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
-import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import { getShortestAvoidHighwaysRoadRouteDetails } from "@/lib/roadRouting";
 /**
  * "9:08PM" / "1:00AM" — 12-hour, no space before the meridiem.
@@ -2233,11 +2229,14 @@ export default function BusinessOrders() {
                           <Navigation className="w-3.5 h-3.5 text-white/80" />
                         </div>
                         <div className="relative">
-                        <GoogleMap
+                        <DeliveryTrackingMap
                           mapContainerStyle={{ width: '100%', height: '220px' }}
-                          defaultCenter={driverLocation}
-                          defaultZoom={13}
-                          options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, draggable: true, gestureHandling: 'greedy' }}
+                          camera={{ mode: 'initial', defaultCenter: driverLocation, defaultZoom: 13 }}
+                          driverLocation={driverLocation}
+                          restaurantLocation={restaurantLocation}
+                          customerLocation={customerLocation}
+                          routePath={routePath}
+                          isHeadingToRestaurant={isRiderEnRouteToShop}
                           onLoad={(map) => {
                             trackingMapRef.current = map;
                             fitLiveTrackingMap(map);
@@ -2252,35 +2251,7 @@ export default function BusinessOrders() {
                             trackingMapWasManuallyMovedRef.current = true;
                             setTrackingMapWasManuallyMoved(true);
                           }}
-                        >
-                          <MapTypeToggle />
-                          {restaurantLocation && (
-                            <MarkerF position={restaurantLocation} title={`${selectedOrder.restaurantName} restaurant`} icon={createRestaurantMarkerIcon()} />
-                          )}
-                          <MarkerF
-                            position={driverLocation}
-                            title="Driver"
-                            icon={createTricycleMarkerIcon()}
-                          />
-                          {customerLocation && (
-                            <MarkerF
-                              position={customerLocation}
-                              title="Customer drop-off"
-                              icon={createDropoffMarkerIcon({ size: 32 })}
-                            />
-                          )}
-                          {routePath.length > 1 && (
-                            <Polyline
-                              path={routePath}
-                              options={{
-                                strokeColor: isRiderEnRouteToShop ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
-                                strokeOpacity: 0.9,
-                                strokeWeight: 6,
-                                zIndex: 10,
-                              }}
-                            />
-                          )}
-                        </GoogleMap>
+                        />
                         {trackingMapWasManuallyMoved && (
                           <button
                             type="button"

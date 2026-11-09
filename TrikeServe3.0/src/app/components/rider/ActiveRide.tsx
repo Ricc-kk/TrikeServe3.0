@@ -17,6 +17,7 @@ import RideMapStatusBanner from "../ui/RideMapStatusBanner";
 import ProofCapture from "../ui/ProofCapture";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import StoreLogo from "../figma/StoreLogo";
+import DeliveryTrackingMap from "../ui/DeliveryTrackingMap";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, logAudit, isPointOnRoadCorridor } from "@/lib/supabase";
 import { readRiderActiveRide, writeRiderActiveRide, clearRiderActiveRide, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
@@ -3025,6 +3026,23 @@ export default function ActiveRide() {
                 map.addListener('dragstart', stopFollowingOnDrag);
                 map.addListener('zoom_changed', stopFollowingOnZoom);
               }}
+            />
+          ) : isDeliveryRide(rideData) ? (
+            <DeliveryTrackingMap
+              mapContainerStyle={{ width: '100%', height: '100%' }}
+              camera={{ mode: 'controlled', center: mapCenter, zoom: INITIAL_MAP_ZOOM }}
+              driverLocation={driverLocation}
+              restaurantLocation={coordinateFromValues(rideData.pickupLat, rideData.pickupLng)}
+              customerLocation={coordinateFromValues(rideData.dropoffLat, rideData.dropoffLng)}
+              routePath={routePath}
+              isHeadingToRestaurant={isHeadingToPickup}
+              onLoad={(map) => {
+                mapRef.current = map;
+                appliedHeadingRef.current = 0;
+                map.addListener('dragstart', stopFollowingOnDrag);
+                map.addListener('zoom_changed', stopFollowingOnZoom);
+              }}
+              onUnmount={() => { mapRef.current = null; }}
             />
           ) : (
           <GoogleMap

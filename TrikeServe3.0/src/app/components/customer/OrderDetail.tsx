@@ -17,12 +17,8 @@ import { geocodeAddress, logAudit, supabaseHelpers } from "@/lib/supabase";
 import { getOrderProgress, isRiderHeadingToRestaurant } from "@/lib/orderProgress";
 import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
 import { useState, useEffect, useRef, useMemo } from "react";
-import { MarkerF, Polyline } from "@react-google-maps/api";
-import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
-import MapTypeToggle from "../ui/MapTypeToggle";
+import DeliveryTrackingMap from "../ui/DeliveryTrackingMap";
 import useMapLoader from "@/lib/mapLoader";
-import { createDropoffMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
-import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import { getShortestAvoidHighwaysRoadRouteDetails } from "@/lib/roadRouting";
 
 interface OrderData {
@@ -1180,50 +1176,29 @@ export default function OrderDetail() {
               </div>
             </div>
             <div className="relative">
-              <GoogleMap
-              mapContainerStyle={{ width: '100%', height: '220px' }}
-              defaultCenter={driverLocation}
-              defaultZoom={13}
-              options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, draggable: true, gestureHandling: 'greedy' }}
-              onLoad={(map) => {
-                trackingMapRef.current = map;
-                fitTrackingMapToRoute(map);
-              }}
-              onUnmount={() => { trackingMapRef.current = null; }}
-              onDragStart={() => {
-                trackingMapWasManuallyMovedRef.current = true;
-                setTrackingMapWasManuallyMoved(true);
-              }}
-              onZoomChanged={() => {
-                if (trackingMapIsProgrammaticallyFittingRef.current) return;
-                trackingMapWasManuallyMovedRef.current = true;
-                setTrackingMapWasManuallyMoved(true);
-              }}
-            >
-              <MapTypeToggle />
-              {restaurantLocation && (
-                <MarkerF position={restaurantLocation} title={`${order.restaurantName} restaurant`} icon={createRestaurantMarkerIcon()} />
-              )}
-              <MarkerF position={driverLocation} title="Driver" icon={createTricycleMarkerIcon()} />
-              {customerLocation && (
-                <MarkerF
-                  position={customerLocation}
-                  title="Customer drop-off"
-                  icon={createDropoffMarkerIcon({ size: 32 })}
-                />
-              )}
-              {routePath.length > 1 && (
-                <Polyline
-                  path={routePath}
-                  options={{
-                    strokeColor: isRiderEnRouteToRestaurant ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
-                    strokeOpacity: 0.9,
-                    strokeWeight: 6,
-                    zIndex: 10,
-                  }}
-                />
-              )}
-              </GoogleMap>
+              <DeliveryTrackingMap
+                mapContainerStyle={{ width: '100%', height: '220px' }}
+                camera={{ mode: 'initial', defaultCenter: driverLocation, defaultZoom: 13 }}
+                driverLocation={driverLocation}
+                restaurantLocation={restaurantLocation}
+                customerLocation={customerLocation}
+                routePath={routePath}
+                isHeadingToRestaurant={isRiderEnRouteToRestaurant}
+                onLoad={(map) => {
+                  trackingMapRef.current = map;
+                  fitTrackingMapToRoute(map);
+                }}
+                onUnmount={() => { trackingMapRef.current = null; }}
+                onDragStart={() => {
+                  trackingMapWasManuallyMovedRef.current = true;
+                  setTrackingMapWasManuallyMoved(true);
+                }}
+                onZoomChanged={() => {
+                  if (trackingMapIsProgrammaticallyFittingRef.current) return;
+                  trackingMapWasManuallyMovedRef.current = true;
+                  setTrackingMapWasManuallyMoved(true);
+                }}
+              />
               {trackingMapWasManuallyMoved && (
                 <button
                   type="button"
