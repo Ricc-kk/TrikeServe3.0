@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation, Flag, CreditCard, Check } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -383,6 +383,8 @@ interface ShareRideLobby {
   id: string;
   terminal_id?: string | null;
   customer_id?: string;
+  dropoff_lat?: number | string | null;
+  dropoff_lng?: number | string | null;
   pickup_location: string;
   pickup_address: string;
   dropoff_location: string;
@@ -912,6 +914,29 @@ export default function ShareRideLobby({
       });
   };
 
+  // The Home return path can reopen this lobby without the original booking
+  // coordinates in component state. The passenger's persisted stop is the
+  // source of truth for the map, marker, and route in that case.
+  const lobbyPassengerDropoffCoords = useMemo(() => {
+    if (!user?.id) return null;
+
+    const passengers = normalizePassengers(lobby?.passengers_json);
+    const ownPassenger = passengers.find(passenger => passenger.id === user.id)
+      || passengers.find(passenger => passenger.id.startsWith(`${user.id}_companion_`));
+    const pointFrom = (latValue: unknown, lngValue: unknown) => {
+      if (latValue == null || lngValue == null || latValue === '' || lngValue === '') return null;
+      const lat = Number(latValue);
+      const lng = Number(lngValue);
+      return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+    };
+
+    return pointFrom(ownPassenger?.dropoffLat, ownPassenger?.dropoffLng)
+      || (lobby?.customer_id === user.id
+        ? pointFrom((lobby as any)?.dropoff_lat, (lobby as any)?.dropoff_lng)
+        : null);
+  }, [lobby?.customer_id, lobby?.dropoff_lat, lobby?.dropoff_lng, lobby?.passengers_json, user?.id]);
+  const effectiveDropoffCoords = lobbyPassengerDropoffCoords || dropoffCoords;
+
   const dedupePassengers = (passengers: LobbyPassenger[]) => {
     const seen = new Set<string>();
     return passengers.filter((p) => {
@@ -1028,7 +1053,7 @@ export default function ShareRideLobby({
         ));
         const dropoffPoint = ownPassenger
           ? { lat: Number(ownPassenger.dropoffLat), lng: Number(ownPassenger.dropoffLng) }
-          : dropoffCoords;
+          : effectiveDropoffCoords;
         const routeForPassenger = dropoffPoint
           ? routes.find(route => route.enabled && isPointOnRoadCorridor(
               dropoffPoint.lat,
@@ -1059,7 +1084,7 @@ export default function ShareRideLobby({
     return () => {
       active = false;
     };
-  }, [lobby?.terminal_id, lobby?.passengers_json, selectedTerminalId, selectedRouteId, terminalCoords, routePoints, dropoffCoords, user?.id]);
+  }, [lobby?.terminal_id, lobby?.passengers_json, selectedTerminalId, selectedRouteId, terminalCoords, routePoints, effectiveDropoffCoords, user?.id]);
 
   const normalizedLiveDriverStatus = String(lobby?.driver_status || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
   const isDriverHeadingToPickup = ['on-the-way', 'arrived'].includes(normalizedLiveDriverStatus)
@@ -1073,7 +1098,7 @@ export default function ShareRideLobby({
       ? routeAnchor
       : pickupCoords;
     const visibleRoutePath = presentation === 'page'
-      ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords, lobby?.passengers_json || [], user?.id)
+      ? buildRouteThroughDropoff(terminalRoutePath, routeStart, effectiveDropoffCoords, lobby?.passengers_json || [], user?.id)
       : terminalRoutePath;
     const shouldShowLiveDriverRoute = !assignedPage || isDriverHeadingToPickup || visibleRoutePath.length === 0;
     const activeDriverRoutePath = assignedPage
@@ -1111,8 +1136,8 @@ export default function ShareRideLobby({
         return Number.isFinite(lat) && Number.isFinite(lng) ? [{ lat, lng }] : [];
       });
     const endpoints = (presentation === 'page'
-      ? [routeAnchor, dropoffCoords]
-      : [pickupCoords, dropoffCoords, ...passengerDropoffs]).filter(
+      ? [routeAnchor, effectiveDropoffCoords]
+      : [pickupCoords, effectiveDropoffCoords, ...passengerDropoffs]).filter(
       (point): point is { lat: number; lng: number } => point !== null && point !== undefined,
     );
     const points = [
@@ -1131,7 +1156,7 @@ export default function ShareRideLobby({
       lobbyMapIsProgrammaticallyFittingRef.current = false;
     }, 500);
     if (liveRideFitKey) lobbyMapFittedRideKeyRef.current = liveRideFitKey;
-  }, [terminalRoutePath, pickupCoords, dropoffCoords, terminalCoords, terminalMarkerPosition, lobby?.id, lobby?.driver_id, lobby?.passengers_json, lobby?.status, user?.id, presentation, driverLocation, driverRoutePath, driverToTerminalRoutePath, isDriverHeadingToPickup]);
+  }, [terminalRoutePath, pickupCoords, effectiveDropoffCoords, terminalCoords, terminalMarkerPosition, lobby?.id, lobby?.driver_id, lobby?.passengers_json, lobby?.status, user?.id, presentation, driverLocation, driverRoutePath, driverToTerminalRoutePath, isDriverHeadingToPickup]);
 
   useEffect(() => {
     fitLobbyRouteBounds();
@@ -1509,7 +1534,7 @@ export default function ShareRideLobby({
       const targetLng = targetPassenger?.dropoffLng == null ? Number.NaN : Number(targetPassenger.dropoffLng);
       dest = Number.isFinite(targetLat) && Number.isFinite(targetLng)
         ? { lat: targetLat, lng: targetLng }
-        : dropoffCoords;
+        : effectiveDropoffCoords;
     }
 
     if (!dest) {
@@ -1572,7 +1597,7 @@ export default function ShareRideLobby({
     lobby?.passengers_json,
     pickupCoords,
     terminalCoords,
-    dropoffCoords,
+    effectiveDropoffCoords,
     user?.id,
   ]);
 
@@ -1660,10 +1685,10 @@ export default function ShareRideLobby({
         const lng = Number(passenger.dropoffLng);
         return Number.isFinite(lat) && Number.isFinite(lng) ? [{ lat, lng }] : [];
       });
-    if (dropoffCoords && !destinations.some(point =>
-      Math.abs(point.lat - dropoffCoords.lat) < 0.00001 && Math.abs(point.lng - dropoffCoords.lng) < 0.00001
+    if (effectiveDropoffCoords && !destinations.some(point =>
+      Math.abs(point.lat - effectiveDropoffCoords.lat) < 0.00001 && Math.abs(point.lng - effectiveDropoffCoords.lng) < 0.00001
     )) {
-      destinations.push(dropoffCoords);
+      destinations.push(effectiveDropoffCoords);
     }
     const uniqueDestinations = destinations.filter((point, index) =>
       destinations.findIndex(candidate =>
@@ -1695,7 +1720,7 @@ export default function ShareRideLobby({
     });
 
     return () => { active = false; };
-  }, [pickupCoords, dropoffCoords, lobby?.passengers_json, isMapsLoaded, user?.id, presentation]);
+  }, [pickupCoords, effectiveDropoffCoords, lobby?.passengers_json, isMapsLoaded, user?.id, presentation]);
 
   // Only load the signed-in customer's own profile photo for this lobby.
   const passengerIdsKey = user?.id && (lobby?.passengers_json || []).some(passenger => passenger.id === user.id)
@@ -2702,12 +2727,12 @@ if (loading) {
     if (!stops.some(stop => stop.key === key)) stops.push({ key, coords: { lat, lng } });
     return stops;
   }, []);
-  if (dropoffCoords && !mapDropoffStops.some(stop =>
-    Math.abs(stop.coords.lat - dropoffCoords.lat) < 0.00001 && Math.abs(stop.coords.lng - dropoffCoords.lng) < 0.00001
+  if (effectiveDropoffCoords && !mapDropoffStops.some(stop =>
+    Math.abs(stop.coords.lat - effectiveDropoffCoords.lat) < 0.00001 && Math.abs(stop.coords.lng - effectiveDropoffCoords.lng) < 0.00001
   )) {
     mapDropoffStops.push({
       key: 'current-user-dropoff',
-      coords: dropoffCoords,
+      coords: effectiveDropoffCoords,
     });
   }
   mapDropoffStops.sort((a, b) =>
@@ -2719,7 +2744,7 @@ if (loading) {
   const routeAnchor = terminalMarkerPosition || terminalCoords || pickupCoords;
   const routeStart = presentation === 'page' ? routeAnchor : pickupCoords;
   const mapTerminalRoutePath = presentation === 'page'
-    ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords, lobby?.passengers_json || [], user?.id)
+    ? buildRouteThroughDropoff(terminalRoutePath, routeStart, effectiveDropoffCoords, lobby?.passengers_json || [], user?.id)
     : terminalRoutePath;
 
   const normalizedDriverStatus = String(
