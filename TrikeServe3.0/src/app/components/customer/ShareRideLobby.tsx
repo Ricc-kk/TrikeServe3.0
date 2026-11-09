@@ -1102,12 +1102,12 @@ export default function ShareRideLobby({
       : terminalRoutePath;
     const shouldShowLiveDriverRoute = !assignedPage || isDriverHeadingToPickup || visibleRoutePath.length === 0;
     const activeDriverRoutePath = assignedPage
-      ? driverToTerminalRoutePath
+      ? (isDriverHeadingToPickup ? driverToTerminalRoutePath : [])
       : shouldShowLiveDriverRoute ? driverRoutePath : [];
     const routeSignature = terminalRoutePath.length > 0
       ? `${terminalRoutePath.length}:${terminalRoutePath[0].lat}:${terminalRoutePath[0].lng}:${terminalRoutePath[terminalRoutePath.length - 1].lat}:${terminalRoutePath[terminalRoutePath.length - 1].lng}`
       : 'empty';
-    const liveRouteSignature = `${assignedPage ? 'driver-to-terminal' : isDriverHeadingToPickup ? 'pickup' : 'dropoff'}:${activeDriverRoutePath.length > 1 ? 'live' : 'planned'}`;
+    const liveRouteSignature = `${assignedPage ? (isDriverHeadingToPickup ? 'driver-to-terminal' : 'terminal-to-dropoff') : isDriverHeadingToPickup ? 'pickup' : 'dropoff'}:${activeDriverRoutePath.length > 1 ? 'live' : 'planned'}`;
     const liveRideFitKey = hasAssignedDriver
       ? `${lobby?.id || ''}:${lobby?.driver_id || ''}:${lobby?.status || ''}:${routeSignature}:${liveRouteSignature}:${routeAnchor?.lat ?? ''}:${routeAnchor?.lng ?? ''}`
       : null;
@@ -1601,14 +1601,13 @@ export default function ShareRideLobby({
     user?.id,
   ]);
 
-  // On the active ride page, connect the driver's live location to the
-  // terminal with a road route. The colored terminal-route segment starts at
-  // that terminal and continues to this customer's drop-off.
+  // Before pickup, connect the driver's live location to the terminal. After
+  // pickup, the map uses the saved terminal route through this customer's stop.
   useEffect(() => {
     const isAssignedRidePage = presentation === 'page'
       && ['driver_found', 'in_progress'].includes(String(lobby?.status || ''));
     const destination = terminalMarkerPosition || terminalCoords || pickupCoords;
-    if (!isAssignedRidePage || !driverLocation || !destination || !isMapsLoaded || !(window as any).google) {
+    if (!isAssignedRidePage || !isDriverHeadingToPickup || !driverLocation || !destination || !isMapsLoaded || !(window as any).google) {
       setDriverToTerminalRoutePath([]);
       driverToTerminalDestinationKeyRef.current = null;
       return;
@@ -1662,6 +1661,7 @@ export default function ShareRideLobby({
     isMapsLoaded,
     lobby?.status,
     presentation,
+    isDriverHeadingToPickup,
     terminalMarkerPosition,
     terminalCoords,
     pickupCoords,
@@ -3227,7 +3227,7 @@ if (loading) {
                     options={{ strokeColor: RIDE_MAP_DROPOFF_COLOR, strokeOpacity: 0.9, strokeWeight: 5, geodesic: true }}
                   />
                 )}
-                {driverToTerminalRoutePath.length > 0 && (
+                {isDriverHeadingToPickup && driverToTerminalRoutePath.length > 0 && (
                   <Polyline
                     path={driverToTerminalRoutePath}
                     options={{
