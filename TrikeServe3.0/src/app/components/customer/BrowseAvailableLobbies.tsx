@@ -16,7 +16,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { computeSharedRideFarePerPassenger, straightLineKm, type RideRates } from "@/lib/pricing";
 import { normalizeTerminalRoutes } from "@/lib/terminalRoutes";
-import { useDevModeActiveFeature, useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { isWebsiteFeatureEnabled, useDevModeActiveFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
 
 interface AvailableLobby {
   id: string;
@@ -108,7 +108,7 @@ export default function BrowseAvailableLobbies({
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const allowRideBookingOutsideTerminal = useDevModeActiveFeature("allowRideBookingOutsideTerminal");
   const [sameRouteLobbyFilter] = useDevModeOverride("sameRouteLobbyFilter");
-  const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
+  const customerRideBookingEnabled = isWebsiteFeatureEnabled("customerRideBooking");
   const [lobbies, setLobbies] = useState<AvailableLobby[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

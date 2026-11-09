@@ -1,7 +1,7 @@
 const DEV_MODE_KEY = "trikeserve_dev_mode";
 const DEV_MODE_CHANGE_EVENT = "trikeserve:dev-mode-change";
 
-export type DevModeFeature = "quickAccess" | "testDataTools" | "enforceBoundary" | "imageProofRequired" | "sameRouteLobbyFilter" | "allowTwoSessions" | "customerRideBooking" | "driverQueueJoining" | "driverFoodDelivery" | "customerDeliveryAnywhere" | "allowRideBookingOutsideTerminal";
+export type DevModeFeature = "quickAccess" | "testDataTools" | "enforceBoundary" | "imageProofRequired" | "sameRouteLobbyFilter" | "allowTwoSessions" | "allowRideBookingOutsideTerminal";
 
 const FEATURE_KEYS: Record<DevModeFeature, string> = {
   quickAccess: "trikeserve_dev_quick_access",
@@ -10,18 +10,11 @@ const FEATURE_KEYS: Record<DevModeFeature, string> = {
   imageProofRequired: "trikeserve_dev_image_proof_required",
   sameRouteLobbyFilter: "trikeserve_dev_same_route_lobby_filter",
   allowTwoSessions: "trikeserve_dev_allow_two_sessions",
-  customerRideBooking: "trikeserve_dev_customer_ride_booking",
-  driverQueueJoining: "trikeserve_dev_driver_queue_joining",
-  driverFoodDelivery: "trikeserve_dev_driver_food_delivery",
-  customerDeliveryAnywhere: "trikeserve_dev_customer_delivery_anywhere",
   allowRideBookingOutsideTerminal: "trikeserve_dev_allow_ride_booking_outside_terminal",
 };
 
 const DISABLED_BY_DEFAULT_FEATURES = new Set<DevModeFeature>([
   "allowTwoSessions",
-  "customerRideBooking",
-  "driverQueueJoining",
-  "driverFoodDelivery",
   "allowRideBookingOutsideTerminal",
 ]);
 
@@ -85,6 +78,17 @@ export function isDevModeEnabled(): boolean {
 
 export function setDevModeEnabled(enabled: boolean): void {
   if (typeof window === "undefined") return;
+
+  // The out-of-terminal booking exception is temporary and should not remain
+  // armed after Developer Mode is switched off. Its default is false, so
+  // clearing the stored override restores normal terminal-border checks.
+  if (!enabled) {
+    try {
+      window.localStorage.removeItem(FEATURE_KEYS.allowRideBookingOutsideTerminal);
+    } catch {
+      // The feature remains gated by Developer Mode in memory if storage is blocked.
+    }
+  }
 
   let persisted = false;
   try {

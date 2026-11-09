@@ -8,12 +8,13 @@ import {
   type DevModeFeature,
 } from "../../lib/devMode";
 
-const webRideServicesEnabled =
-  import.meta.env.VITE_ENABLE_WEB_RIDE_SERVICES?.trim().toLowerCase() === "true";
-const webDriverQueueJoiningEnabled =
-  import.meta.env.VITE_ENABLE_WEB_DRIVER_QUEUE_JOINING?.trim().toLowerCase() === "true";
-const webDriverFoodDeliveryEnabled =
-  import.meta.env.VITE_ENABLE_WEB_DRIVER_FOOD_DELIVERY?.trim().toLowerCase() === "true";
+export type WebsiteFeature = "customerRideBooking" | "driverQueueJoining" | "driverFoodDelivery";
+
+const websiteFeatureFlags: Record<WebsiteFeature, string | undefined> = {
+  customerRideBooking: import.meta.env.VITE_ENABLE_WEB_RIDE_SERVICES,
+  driverQueueJoining: import.meta.env.VITE_ENABLE_WEB_DRIVER_QUEUE_JOINING,
+  driverFoodDelivery: import.meta.env.VITE_ENABLE_WEB_DRIVER_FOOD_DELIVERY,
+};
 
 export function useDevModeStatus(): [boolean, (enabled: boolean) => void] {
   const [enabled, setEnabled] = useState(isDevModeEnabled);
@@ -54,24 +55,9 @@ export function useDevModeOverride(feature: DevModeFeature): [boolean, (enabled:
   return [!devModeEnabled || featureEnabled, updateFeature];
 }
 
-/** Website feature flags are the normal setting; Dev Mode provides a local override. */
-export function useDevModeOnlyFeature(feature: DevModeFeature): boolean {
-  const [devModeEnabled] = useDevModeStatus();
-  const [featureEnabled] = useDevModeFeature(feature);
-  const canEnableFromWebsiteEnv =
-    (feature === "customerRideBooking" && webRideServicesEnabled) ||
-    (feature === "driverQueueJoining" && webDriverQueueJoiningEnabled) ||
-    (feature === "driverFoodDelivery" && webDriverFoodDeliveryEnabled);
-  const isWebsiteFeature = feature === "customerRideBooking" ||
-    feature === "driverQueueJoining" || feature === "driverFoodDelivery";
-
-  if (isWebsiteFeature) {
-    // Keep deployed website defaults outside Dev Mode, but let the developer
-    // switches override those defaults in any build.
-    return devModeEnabled ? featureEnabled : canEnableFromWebsiteEnv;
-  }
-
-  return !devModeEnabled || featureEnabled;
+/** Website services are enabled by default; an explicit build flag can opt out. */
+export function isWebsiteFeatureEnabled(feature: WebsiteFeature): boolean {
+  return websiteFeatureFlags[feature]?.trim().toLowerCase() !== "false";
 }
 
 /** A local developer override that applies only while Developer Mode is enabled. */

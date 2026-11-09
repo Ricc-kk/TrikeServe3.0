@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Camera, CarTaxiFront, Code2, ListOrdered, MapPin, Package, Route, Settings2, Trash2, Users, X } from "lucide-react";
+import { Camera, CarTaxiFront, Code2, MapPin, Route, Settings2, Trash2, Users, X } from "lucide-react";
 import { useDevModeFeature, useDevModeStatus } from "../../hooks/useDevModeSettings";
 import { Switch } from "./switch";
 
@@ -93,10 +93,6 @@ export default function DevModeSettings() {
   const [imageProofRequired, setImageProofRequired] = useDevModeFeature("imageProofRequired");
   const [sameRouteLobbyFilter, setSameRouteLobbyFilter] = useDevModeFeature("sameRouteLobbyFilter");
   const [allowTwoSessions, setAllowTwoSessions] = useDevModeFeature("allowTwoSessions");
-  const [customerRideBookingEnabled, setCustomerRideBookingEnabled] = useDevModeFeature("customerRideBooking");
-  const [driverQueueJoiningEnabled, setDriverQueueJoiningEnabled] = useDevModeFeature("driverQueueJoining");
-  const [driverFoodDeliveryEnabled, setDriverFoodDeliveryEnabled] = useDevModeFeature("driverFoodDelivery");
-  const [customerDeliveryAnywhereEnabled, setCustomerDeliveryAnywhereEnabled] = useDevModeFeature("customerDeliveryAnywhere");
   const [allowRideBookingOutsideTerminal, setAllowRideBookingOutsideTerminal] = useDevModeFeature("allowRideBookingOutsideTerminal");
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<FloatingPosition>(getInitialFloatingPosition);
@@ -281,42 +277,6 @@ export default function DevModeSettings() {
               onCheckedChange={setSameRouteLobbyFilter}
               disabled={!isEnabled}
               icon={Route}
-            />
-            <SettingRow
-              id="dev-mode-customer-ride-booking"
-              title="Customer ride booking"
-              description="Allow customers to book Share Ride and Private Ride while Dev Mode is on."
-              checked={customerRideBookingEnabled}
-              onCheckedChange={setCustomerRideBookingEnabled}
-              disabled={!isEnabled}
-              icon={CarTaxiFront}
-            />
-            <SettingRow
-              id="dev-mode-driver-queue-joining"
-              title="Driver queue joining"
-              description="Allow drivers to join a terminal queue while Dev Mode is on."
-              checked={driverQueueJoiningEnabled}
-              onCheckedChange={setDriverQueueJoiningEnabled}
-              disabled={!isEnabled}
-              icon={ListOrdered}
-            />
-            <SettingRow
-              id="dev-mode-driver-food-delivery"
-              title="Driver delivery requests"
-              description="Allow drivers to accept food delivery requests while Dev Mode is on."
-              checked={driverFoodDeliveryEnabled}
-              onCheckedChange={setDriverFoodDeliveryEnabled}
-              disabled={!isEnabled}
-              icon={Package}
-            />
-            <SettingRow
-              id="dev-mode-customer-delivery-anywhere"
-              title="Customer delivery anywhere"
-              description="Allow customers to place food delivery orders to any selected address while Dev Mode is on."
-              checked={customerDeliveryAnywhereEnabled}
-              onCheckedChange={setCustomerDeliveryAnywhereEnabled}
-              disabled={!isEnabled}
-              icon={MapPin}
             />
             <SettingRow
               id="dev-mode-allow-ride-booking-outside-terminal"

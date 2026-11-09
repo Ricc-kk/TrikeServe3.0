@@ -25,7 +25,7 @@ import { computeDistanceFare, deliveryRates, straightLineKm } from "@/lib/pricin
 import ProofCapture from "../ui/ProofCapture";
 import { getDefaultAddress, setDefaultAddress } from "@/lib/defaultAddress";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
-import { useDevModeFeature, useDevModeOverride, useDevModeStatus } from "../../hooks/useDevModeSettings";
+import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 
 /**
  * Checkout for one restaurant.
@@ -46,11 +46,9 @@ export default function CartCheckout() {
     useCart();
   const { addOrder } = useOrders();
   const { user } = useAuth();
-  const [devModeEnabled] = useDevModeStatus();
-  const [customerDeliveryAnywhereEnabled] = useDevModeFeature("customerDeliveryAnywhere");
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const [imageProofRequired] = useDevModeOverride("imageProofRequired");
-  const allowAnyDeliveryAddress = devModeEnabled && customerDeliveryAnywhereEnabled;
+  const allowAnyDeliveryAddress = true;
 
   // Back to the cart list this was opened from.
   const goBack = usePreviousPage("/customer/cart");

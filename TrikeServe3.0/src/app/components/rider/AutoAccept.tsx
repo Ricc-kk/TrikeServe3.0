@@ -5,14 +5,14 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
+import { isWebsiteFeatureEnabled } from "../../hooks/useDevModeSettings";
 import { isAutoAcceptEnabled, setAutoAcceptEnabled } from "../../hooks/useAutoAccept";
 import ActiveRideButton from "./ActiveRideButton";
 
 export default function AutoAccept() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
+  const foodDeliveryEnabled = isWebsiteFeatureEnabled("driverFoodDelivery");
   const [autoAcceptEnabled, setAutoAcceptEnabledState] = useState<boolean>(() => isAutoAcceptEnabled(user?.id));
   const [soundNotificationEnabled, setSoundNotificationEnabled] = useState(true);
 

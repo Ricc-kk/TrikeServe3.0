@@ -11,7 +11,7 @@ import {
   type LatLngPoint,
 } from "@/lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
-import { useDevModeOnlyFeature, useDevModeOverride } from "./useDevModeSettings";
+import { isWebsiteFeatureEnabled, useDevModeOverride } from "./useDevModeSettings";
 
 export interface TerminalGeometry {
   /**
@@ -133,7 +133,7 @@ export function isDeliveryServiceMode(serviceTypes?: string[] | null): boolean {
 export function useTerminalQueue() {
   const { user } = useAuth();
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
-  const queueJoiningEnabled = useDevModeOnlyFeature("driverQueueJoining");
+  const queueJoiningEnabled = isWebsiteFeatureEnabled("driverQueueJoining");
   const [terminalId, setTerminalId] = useState<string | null>(user?.terminalId || null);
   const [terminalName, setTerminalName] = useState<string | null>(user?.terminalName || null);
   const [queue, setQueue] = useState<TerminalQueueEntry[]>([]);

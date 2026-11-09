@@ -21,7 +21,7 @@ import RideChatOverlay from "../rider/RideChatOverlay";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR } from "@/lib/rideMapColors";
 import { DEFAULT_TERMINAL_COLOR, normalizeRouteColor, normalizeTerminalColor, terminalMarkerIcon, TerminalIconGlyph } from "../ui/TerminalIcon";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
-import { useDevModeActiveFeature, useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { isWebsiteFeatureEnabled, useDevModeActiveFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "../../../lib/rideLock";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes } from "@/lib/terminalRoutes";
 import { Tricycle } from "../ui/Tricycle";
@@ -438,7 +438,7 @@ export default function ShareRideLobby({
     : DEFAULT_MAX_PASSENGERS;
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const allowRideBookingOutsideTerminal = useDevModeActiveFeature("allowRideBookingOutsideTerminal");
-  const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
+  const customerRideBookingEnabled = isWebsiteFeatureEnabled("customerRideBooking");
   const [openingChat, setOpeningChat] = useState(false);
   /**
    * Floating chat head state, mirroring the driver's ride screen.

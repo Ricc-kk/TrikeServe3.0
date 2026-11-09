@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { supabase } from "../../../utils/supabase";
 import { normalizeRates } from "@/lib/pricing";
-import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
+import { isWebsiteFeatureEnabled } from "../../hooks/useDevModeSettings";
 
 interface Restaurant {
   id: string;
@@ -30,7 +30,7 @@ interface MenuItem {
 }
 
 export default function CustomerApp() {
-  const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
+  const customerRideBookingEnabled = isWebsiteFeatureEnabled("customerRideBooking");
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<MenuItem[]>([]);
   const [rideType, setRideType] = useState<'shared' | 'private' | null>(null);

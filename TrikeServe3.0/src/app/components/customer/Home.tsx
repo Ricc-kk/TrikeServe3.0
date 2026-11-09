@@ -47,7 +47,7 @@ import CustomerHubHeader from "./CustomerHubHeader";
 import RecommendedRestaurants from "./RecommendedRestaurants";
 import CustomerServiceHub from "./CustomerServiceHub";
 import CustomerCartPreview from "./CustomerCartPreview";
-import { useDevModeActiveFeature, useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { isWebsiteFeatureEnabled, useDevModeActiveFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { getProfileInitials } from "@/lib/profileInitials";
 import {
   getShortestAvoidHighwaysRoadRoute,
@@ -404,7 +404,7 @@ export default function CustomerHome() {
   const rideStateIdentity = user?.id ? `${user.id}:${user.role}` : null;
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const allowRideBookingOutsideTerminal = useDevModeActiveFeature("allowRideBookingOutsideTerminal");
-  const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
+  const customerRideBookingEnabled = isWebsiteFeatureEnabled("customerRideBooking");
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname.replace(/\/+$/, '');

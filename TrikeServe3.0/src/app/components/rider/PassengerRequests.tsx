@@ -11,7 +11,7 @@ import FullSizeImagePreview from "../ui/FullSizeImagePreview";
 import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { useAuth } from "../../contexts/AuthContext";
-import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
+import { isWebsiteFeatureEnabled } from "../../hooks/useDevModeSettings";
 import { isDeliveryServiceMode, isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
 import { isPointInPolygon, isPointWithinTerminalRoute, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, DEFAULT_ROAD_WIDTH_M, supabaseHelpers, logAudit, geocodeAddress, type LatLngPoint } from "@/lib/supabase";
@@ -177,7 +177,7 @@ interface PassengerDropoffStop {
 export default function PassengerRequests() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
+  const foodDeliveryEnabled = isWebsiteFeatureEnabled("driverFoodDelivery");
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'shared' | 'private' | 'delivery'>('all');
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });

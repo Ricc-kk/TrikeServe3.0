@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router";
 import { ArrowLeft, Check, Package, Users, Car } from "lucide-react";
 import { Button } from "../ui/button";
 import { useAuth } from "../../contexts/AuthContext";
-import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
+import { isWebsiteFeatureEnabled } from "../../hooks/useDevModeSettings";
 import ActiveRideButton from "./ActiveRideButton";
 
 type ServiceCategory = 'rides' | 'delivery';
@@ -35,7 +35,7 @@ export default function ServiceTypes() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, updateProfile } = useAuth();
-  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
+  const foodDeliveryEnabled = isWebsiteFeatureEnabled("driverFoodDelivery");
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo || '/rider';
 
   // Rides can include Ride Share and/or Private Ride; Delivery is exclusive with a single option

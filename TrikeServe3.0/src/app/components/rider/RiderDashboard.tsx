@@ -35,7 +35,7 @@ import { consumeWelcomeGreeting } from "../../../lib/welcomeGreeting";
 import { isPointWithinTerminalRoute, supabaseHelpers } from "@/lib/supabase";
 import { writeRiderActiveRide, clearRiderActiveRide, checkRiderActiveRide } from "../../../lib/riderActiveRide";
 import { useTerminalQueue } from "../../hooks/useTerminalQueue";
-import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
+import { isWebsiteFeatureEnabled } from "../../hooks/useDevModeSettings";
 import TerminalQueueCard from "./TerminalQueueCard";
 import { createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { supabase } from "../../../lib/supabase";
@@ -65,7 +65,7 @@ const SERVICE_TYPE_LABELS = {
 export default function RiderDashboard() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
-  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
+  const foodDeliveryEnabled = isWebsiteFeatureEnabled("driverFoodDelivery");
   const updateProfileRef = useRef(updateProfile);
   updateProfileRef.current = updateProfile;
   const dashboardRef = useRef<HTMLDivElement>(null);

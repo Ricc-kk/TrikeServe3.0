@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
-import { useDevModeOnlyFeature } from "./useDevModeSettings";
+import { isWebsiteFeatureEnabled } from "./useDevModeSettings";
 import { supabaseHelpers } from "@/lib/supabase";
 
 const KEY_PREFIX = "trikeserve_auto_accept_";
@@ -34,7 +34,7 @@ export function setAutoAcceptEnabled(userId: string, enabled: boolean) {
 export function useAutoAccept() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
+  const foodDeliveryEnabled = isWebsiteFeatureEnabled("driverFoodDelivery");
   const acceptingRef = useRef(false);
 
   useEffect(() => {

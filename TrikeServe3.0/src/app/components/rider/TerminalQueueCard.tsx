@@ -19,7 +19,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { RideModal } from "../ui/RideUI";
 import { useTerminalQueue } from "../../hooks/useTerminalQueue";
-import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
+import { isWebsiteFeatureEnabled } from "../../hooks/useDevModeSettings";
 import type { LatLngPoint } from "@/lib/supabase";
 
 const MAX_VISIBLE_DRIVERS = 5;
@@ -185,8 +185,8 @@ interface TerminalQueueCardProps {
  * ("first in queue may accept private/share rides") reads identically.
  */
 export default function TerminalQueueCard({ queue, variant = "full", canJoin = true }: TerminalQueueCardProps) {
-  const queueJoiningEnabled = useDevModeOnlyFeature("driverQueueJoining");
-  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
+  const queueJoiningEnabled = isWebsiteFeatureEnabled("driverQueueJoining");
+  const foodDeliveryEnabled = isWebsiteFeatureEnabled("driverFoodDelivery");
   const {
     terminalId,
     terminalName,
