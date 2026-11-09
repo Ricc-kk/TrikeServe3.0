@@ -1015,17 +1015,27 @@ export default function ShareRideLobby({
     };
   }, [lobby?.terminal_id, lobby?.passengers_json, selectedTerminalId, selectedRouteId, terminalCoords, routePoints, dropoffCoords, user?.id]);
 
+  const normalizedLiveDriverStatus = String(lobby?.driver_status || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  const isDriverHeadingToPickup = ['on-the-way', 'arrived'].includes(normalizedLiveDriverStatus)
+    || (lobby?.status === 'driver_found' && !normalizedLiveDriverStatus);
+
   const fitLobbyRouteBounds = useCallback(() => {
     const hasAssignedDriver = ['driver_found', 'in_progress'].includes(String(lobby?.status || ''));
     const assignedPage = presentation === 'page' && hasAssignedDriver;
     const routeStart = presentation === 'page'
       ? pickupCoords || terminalMarkerPosition || terminalCoords
       : pickupCoords;
+    const visibleRoutePath = presentation === 'page'
+      ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords, lobby?.passengers_json || [])
+      : terminalRoutePath;
+    const shouldShowLiveDriverRoute = !assignedPage || isDriverHeadingToPickup || visibleRoutePath.length === 0;
+    const activeDriverRoutePath = shouldShowLiveDriverRoute ? driverRoutePath : [];
     const routeSignature = terminalRoutePath.length > 0
       ? `${terminalRoutePath.length}:${terminalRoutePath[0].lat}:${terminalRoutePath[0].lng}:${terminalRoutePath[terminalRoutePath.length - 1].lat}:${terminalRoutePath[terminalRoutePath.length - 1].lng}`
       : 'empty';
+    const liveRouteSignature = `${isDriverHeadingToPickup ? 'pickup' : 'dropoff'}:${activeDriverRoutePath.length > 1 ? 'live' : 'planned'}`;
     const liveRideFitKey = hasAssignedDriver
-      ? `${lobby?.id || ''}:${lobby?.driver_id || ''}:${lobby?.status || ''}:${routeSignature}:${routeStart?.lat ?? ''}:${routeStart?.lng ?? ''}`
+      ? `${lobby?.id || ''}:${lobby?.driver_id || ''}:${lobby?.status || ''}:${routeSignature}:${liveRouteSignature}:${routeStart?.lat ?? ''}:${routeStart?.lng ?? ''}`
       : null;
     if (!hasAssignedDriver) lobbyMapFittedRideKeyRef.current = null;
     if (lobbyMapWasManuallyMovedRef.current) return;
@@ -1038,9 +1048,6 @@ export default function ShareRideLobby({
     const maps = (window as any).google?.maps;
     if (!map || !maps?.LatLngBounds) return;
 
-    const visibleRoutePath = presentation === 'page'
-      ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords, lobby?.passengers_json || [])
-      : terminalRoutePath;
     const passengerDropoffs = presentation === 'page' ? [] : (lobby?.passengers_json || [])
       .filter(passenger => Boolean(
         user?.id && (
@@ -1059,7 +1066,7 @@ export default function ShareRideLobby({
     );
     const points = [
       ...visibleRoutePath,
-      ...(assignedPage ? [] : driverRoutePath),
+      ...activeDriverRoutePath,
       ...(assignedPage && routeStart ? [routeStart] : []),
       ...endpoints,
       ...(driverLocation ? [driverLocation] : []),
@@ -1073,7 +1080,7 @@ export default function ShareRideLobby({
       lobbyMapIsProgrammaticallyFittingRef.current = false;
     }, 500);
     if (liveRideFitKey) lobbyMapFittedRideKeyRef.current = liveRideFitKey;
-  }, [terminalRoutePath, pickupCoords, dropoffCoords, terminalCoords, terminalMarkerPosition, lobby?.id, lobby?.driver_id, lobby?.passengers_json, lobby?.status, user?.id, presentation, driverLocation, driverRoutePath]);
+  }, [terminalRoutePath, pickupCoords, dropoffCoords, terminalCoords, terminalMarkerPosition, lobby?.id, lobby?.driver_id, lobby?.passengers_json, lobby?.status, user?.id, presentation, driverLocation, driverRoutePath, isDriverHeadingToPickup]);
 
   useEffect(() => {
     fitLobbyRouteBounds();
@@ -1403,9 +1410,6 @@ export default function ShareRideLobby({
   const driverRouteOriginKey = driverLocation
     ? `${Math.round(driverLocation.lat * 2000)}:${Math.round(driverLocation.lng * 2000)}`
     : '';
-  const normalizedLiveDriverStatus = String(lobby?.driver_status || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
-  const isDriverHeadingToPickup = ['on-the-way', 'arrived'].includes(normalizedLiveDriverStatus)
-    || (lobby?.status === 'driver_found' && !normalizedLiveDriverStatus);
 
   // Route the driver's live map line to the shared pickup, then directly to
   // this customer's own next drop-off. Other passengers are not route stops on
@@ -3084,7 +3088,7 @@ if (loading) {
                     options={{ strokeColor: RIDE_MAP_DROPOFF_COLOR, strokeOpacity: 0.9, strokeWeight: 5, geodesic: true }}
                   />
                 )}
-                {!showAssignedRidePage && driverRoutePath.length > 0 && (
+                {driverRoutePath.length > 0 && (isDriverHeadingToPickup || mapTerminalRoutePath.length === 0) && (
                   <Polyline
                     path={driverRoutePath}
                     options={{

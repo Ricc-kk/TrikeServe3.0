@@ -275,6 +275,9 @@ export default function OrderDetail() {
 
     const fetchOrder = async () => {
       try {
+        setRating(0);
+        setRatingSubmitted(false);
+        setShowItemRatingPrompt(false);
         setRestaurantLocation(null);
         setRestaurantProfile(null);
         attemptedRestaurantGeocodeRef.current = null;
@@ -405,6 +408,42 @@ export default function OrderDetail() {
 
     fetchOrder();
   }, [orderId]);
+
+  // Restore the customer's restaurant rating when they reopen or reload an
+  // order. This is separate from order loading so a ratings query cannot delay
+  // the order details if the ratings table is slow or unavailable.
+  useEffect(() => {
+    if (!order?.id || !user?.id) return;
+
+    let active = true;
+    const loadSavedRestaurantRating = async () => {
+      const { data: savedRating, error: savedRatingError } = await supabase
+        .from('business_ratings')
+        .select('rating')
+        .eq('order_id', order.id)
+        .eq('customer_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!active) return;
+      if (savedRatingError) {
+        console.warn('[OrderDetail] Could not load saved restaurant rating:', savedRatingError);
+        return;
+      }
+      if (savedRating) {
+        const savedValue = Number(savedRating.rating);
+        if (Number.isInteger(savedValue) && savedValue >= 1 && savedValue <= 5) {
+          setRating(savedValue);
+          setRatingSubmitted(true);
+          setShowItemRatingPrompt(true);
+        }
+      }
+    };
+
+    void loadSavedRestaurantRating();
+    return () => { active = false; };
+  }, [order?.id, user?.id]);
 
   // Apply order status changes immediately when realtime is available. The
   // three-second poll below remains as a fallback for delayed or missed events.
@@ -1382,6 +1421,11 @@ export default function OrderDetail() {
                 <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-2xl">🙏</div>
                 <h3 className="text-lg font-bold text-[var(--ink)] mb-1">Thank you!</h3>
                 <p className="text-sm text-[var(--muted-foreground)]">Your rating for {order.restaurantName} has been saved.</p>
+                <div className="mt-3 flex justify-center gap-1" role="img" aria-label={`You rated this restaurant ${rating} out of 5 stars`}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star key={star} className={`size-5 ${star <= rating ? 'fill-[var(--amber)] text-[var(--amber)]' : 'fill-[var(--border)] text-[var(--border)]'}`} aria-hidden="true" />
+                  ))}
+                </div>
                 {showItemRatingPrompt && order.restaurantId && order.items.some((item) => String(item.id ?? "").trim()) && (
                   <div className="mt-4 rounded-2xl bg-[var(--muted)] p-4 text-left">
                     <p className="text-sm font-semibold text-[var(--ink)]">Would you also like to rate the items you ordered?</p>
@@ -1424,7 +1468,7 @@ export default function OrderDetail() {
                     if (!rating || !user?.id || !order.businessId) return;
                     setRatingSubmitting(true);
                     setRatingError(null);
-                    const { error } = await supabaseHelpers.rateBusiness({ businessId: order.businessId, customerId: user.id, rating, orderId: order.id });
+                    const { error } = await supabaseHelpers.rateBusiness({ businessId: order.businessId, restaurantId: order.restaurantId || undefined, customerId: user.id, rating, orderId: order.id });
                     setRatingSubmitting(false);
                     if (error) { setRatingError('Failed to submit rating.'); return; }
                     setRatingSubmitted(true);

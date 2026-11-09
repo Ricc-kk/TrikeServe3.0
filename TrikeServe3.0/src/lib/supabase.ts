@@ -3552,15 +3552,45 @@ export const supabaseHelpers = {
     rating: number;
     orderId?: string;
   }) {
+    const ratingValues = {
+      business_id: details.businessId,
+      customer_id: details.customerId,
+      rating: details.rating,
+      order_id: details.orderId || null,
+    };
+    const ratingUpdateValues = details.restaurantId
+      ? { ...ratingValues, restaurant_id: details.restaurantId }
+      : ratingValues;
+
+    // Keep one editable restaurant rating per customer and order. Rating is
+    // submitted from both the delivery completion screen and order details, so
+    // re-submitting after a reload should update the existing row.
+    if (details.orderId) {
+      const { data: existing, error: lookupError } = await supabase
+        .from('business_ratings')
+        .select('id')
+        .eq('business_id', details.businessId)
+        .eq('customer_id', details.customerId)
+        .eq('order_id', details.orderId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (lookupError) return { data: null, error: lookupError };
+      if (existing?.id) {
+        const { data, error } = await supabase
+          .from('business_ratings')
+          .update(ratingUpdateValues)
+          .eq('id', existing.id)
+          .select()
+          .single();
+        return { data, error };
+      }
+    }
+
     const { data, error } = await supabase
       .from('business_ratings')
-      .insert([{
-        business_id: details.businessId,
-        restaurant_id: details.restaurantId || null,
-        customer_id: details.customerId,
-        rating: details.rating,
-        order_id: details.orderId || null,
-      }])
+      .insert([{ ...ratingUpdateValues, restaurant_id: details.restaurantId || null }])
       .select()
       .single();
 

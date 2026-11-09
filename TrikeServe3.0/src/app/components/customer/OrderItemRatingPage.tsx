@@ -46,7 +46,7 @@ function parseOrderedItems(rawItems: unknown): OrderedItem[] {
 
 export default function OrderItemRatingPage() {
   const { orderId } = useParams();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   const goBack = usePreviousPage(orderId ? `/customer/order-detail/${orderId}` : "/customer/activity");
 
@@ -61,6 +61,15 @@ export default function OrderItemRatingPage() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
+
+    setLoading(true);
+    setPageError(null);
+    setRatingLoadError(null);
+    setOrder(null);
+    setRatings({});
+    setSavedRatings({});
+
     if (!orderId || !user?.id) {
       setPageError("This order could not be opened.");
       setLoading(false);
@@ -72,12 +81,19 @@ export default function OrderItemRatingPage() {
       try {
         const { data, error } = await supabase
           .from("orders")
-          .select("id, customer_id, order_number, restaurant_id, restaurant_email, restaurant_name, status, items")
+          .select("id, customer_id, customer_email, business_id, order_number, restaurant_id, restaurant_email, restaurant_name, status, items")
           .eq("id", orderId)
-          .eq("customer_id", user.id)
           .maybeSingle();
 
         if (error || !data) {
+          if (active) setPageError("Order not found.");
+          return;
+        }
+
+        const orderCustomerId = String(data.customer_id || "").trim();
+        const orderCustomerEmail = String(data.customer_email || "").trim().toLowerCase();
+        const currentCustomerEmail = String(user.email || "").trim().toLowerCase();
+        if (orderCustomerId !== user.id && (!currentCustomerEmail || orderCustomerEmail !== currentCustomerEmail)) {
           if (active) setPageError("Order not found.");
           return;
         }
@@ -87,7 +103,26 @@ export default function OrderItemRatingPage() {
           return;
         }
 
-        const restaurantId = String(data.restaurant_id || data.restaurant_email || "").trim();
+        let restaurantId = String(data.restaurant_id || "").trim();
+        if (!restaurantId) {
+          const restaurantReference = String(data.restaurant_email || "").trim();
+          if (restaurantReference) {
+            const { data: restaurantById } = await supabase
+              .from("restaurants")
+              .select("id")
+              .eq("id", restaurantReference)
+              .maybeSingle();
+            restaurantId = String(restaurantById?.id || "").trim();
+          }
+          if (!restaurantId && data.business_id) {
+            const { data: restaurantByBusiness } = await supabase
+              .from("restaurants")
+              .select("id")
+              .eq("business_user_id", data.business_id)
+              .maybeSingle();
+            restaurantId = String(restaurantByBusiness?.id || "").trim();
+          }
+        }
         const orderedItems = parseOrderedItems(data.items);
         const { data: savedRows, error: ratingsError } = await supabase
           .from("menu_item_ratings")
@@ -125,7 +160,7 @@ export default function OrderItemRatingPage() {
 
     void loadOrder();
     return () => { active = false; };
-  }, [orderId, user?.id]);
+  }, [orderId, user?.id, user?.email, authLoading]);
 
   const hasChanges = Boolean(order && order.items.some((item) => {
     const rating = Number(ratings[item.index]);
