@@ -38,19 +38,31 @@ function decodePolyline(encoded: string): RoadRouteCoordinate[] {
 }
 
 function pathFromDirectionsRoute(route: any): RoadRouteCoordinate[] {
+  const detailedPath: RoadRouteCoordinate[] = [];
+  for (const step of route?.legs?.flatMap((leg: any) => leg?.steps ?? []) ?? []) {
+    const stepPath = Array.isArray(step?.path)
+      ? step.path.map((point: any) => ({
+          lat: typeof point?.lat === 'function' ? point.lat() : Number(point?.lat),
+          lng: typeof point?.lng === 'function' ? point.lng() : Number(point?.lng),
+        }))
+      : step?.polyline?.points
+        ? decodePolyline(step.polyline.points)
+        : [];
+    const validStepPath = stepPath.filter((point: RoadRouteCoordinate) =>
+      Number.isFinite(point.lat) && Number.isFinite(point.lng),
+    );
+    if (validStepPath.length > 0) {
+      detailedPath.push(...(detailedPath.length ? validStepPath.slice(1) : validStepPath));
+    }
+  }
+  if (detailedPath.length > 1) return detailedPath;
+
   const overview = route?.overview_path;
   if (Array.isArray(overview) && overview.length > 1) {
     return overview.map((point: any) => ({ lat: point.lat(), lng: point.lng() }));
   }
 
-  const path: RoadRouteCoordinate[] = [];
-  for (const step of route?.legs?.flatMap((leg: any) => leg?.steps ?? []) ?? []) {
-    const encoded = step?.polyline?.points;
-    if (!encoded) continue;
-    const decoded = decodePolyline(encoded);
-    path.push(...(path.length ? decoded.slice(1) : decoded));
-  }
-  return path;
+  return detailedPath;
 }
 
 /**
@@ -75,7 +87,8 @@ export async function getShortestAvoidHighwaysRoadRouteDetails(
           origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
           destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
           travelMode: 'DRIVE',
-          routePreference: 'SHORTER_DISTANCE',
+          routingPreference: 'TRAFFIC_UNAWARE',
+          polylineQuality: 'HIGH_QUALITY',
           routeModifiers: { avoidHighways: true },
           computeAlternativeRoutes: true,
         }),

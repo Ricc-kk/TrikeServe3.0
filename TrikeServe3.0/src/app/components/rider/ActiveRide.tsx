@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { Navigation, MapPin, CheckCircle, X, MessageSquare, Flag, ChevronDown, ChevronUp, CreditCard } from "lucide-react";
-import { Marker, InfoWindow, DirectionsRenderer, Polyline } from "@react-google-maps/api";
+import { Marker, InfoWindow, Polyline } from "@react-google-maps/api";
 import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import { Button } from "../ui/button";
@@ -247,38 +247,6 @@ function getSharedPassengerDropoff(passenger: any, index: number, ride: ActiveRi
     : 'Drop-off unavailable';
 }
 
-function decodeRoutePolyline(encoded: string): google.maps.LatLngLiteral[] {
-  const points: google.maps.LatLngLiteral[] = [];
-  let index = 0;
-  let lat = 0;
-  let lng = 0;
-
-  while (index < encoded.length) {
-    let result = 0;
-    let shift = 0;
-    let byte: number;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20 && index < encoded.length);
-    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
-
-    result = 0;
-    shift = 0;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20 && index < encoded.length);
-    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
-
-    points.push({ lat: lat / 1e5, lng: lng / 1e5 });
-  }
-
-  return points;
-}
-
 interface RouteProjection {
   point: RideCoordinate;
   distanceAlong: number;
@@ -489,7 +457,6 @@ export default function ActiveRide() {
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   // Drives the inline location banner; null while the device can give us a position.
   const [locationProblem, setLocationProblem] = useState<LocationProblem | null>(null);
-  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [sharedDropoffRoutes, setSharedDropoffRoutes] = useState<SharedDropoffRoute[]>([]);
   const [sharedTerminalRoute, setSharedTerminalRoute] = useState<TerminalRoute | null>(null);
@@ -1539,7 +1506,6 @@ export default function ActiveRide() {
       const sharedPhaseKey = `${rideData.id}:shared-dropoffs`;
       if (routePhaseRef.current !== sharedPhaseKey) {
         routePhaseRef.current = sharedPhaseKey;
-        setDirections(null);
         setRoutePath(null);
       }
       return;
@@ -1550,14 +1516,12 @@ export default function ActiveRide() {
     if (routePhaseRef.current !== phaseKey) {
       // Remove the previous leg immediately when the rider confirms pickup.
       routePhaseRef.current = phaseKey;
-      setDirections(null);
       setRoutePath(null);
     }
 
     if (isPrivateRide && !isHeadingToPickup) {
       // The private drop-off leg is drawn from the driver's live GPS position
       // along the selected terminal route below, not from Google Directions.
-      setDirections(null);
       setRoutePath(null);
       return;
     }
@@ -1574,7 +1538,6 @@ export default function ActiveRide() {
       : null;
 
     if (!dest || !Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) {
-      setDirections(null);
       setRoutePath(null);
       return;
     }
@@ -1598,68 +1561,15 @@ export default function ActiveRide() {
       inFlight = true;
       try {
         const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
-        if (isDeliveryRide) {
-          const path = await getShortestAvoidHighwaysRoadRoute(origin, dest, apiKey);
-          if (!cancelled && path.length > 1) {
-            setDirections(null);
-            setRoutePath(path);
-            hasRoute = true;
-          } else if (!cancelled) {
-            setDirections(null);
-            setRoutePath(null);
-            hasRoute = false;
-          }
-          return;
-        }
-
-        if (apiKey) {
-          try {
-            const response = await fetch(`https://routes.googleapis.com/directions/v2:computeRoutes?key=${apiKey}`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
-              },
-              body: JSON.stringify({
-                origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
-                destination: { location: { latLng: { latitude: dest.lat, longitude: dest.lng } } },
-                travelMode: 'DRIVE',
-                computeAlternativeRoutes: false,
-              }),
-            });
-            const data = await response.json();
-            const encoded = response.ok ? data.routes?.[0]?.polyline?.encodedPolyline : null;
-            const path = encoded ? decodeRoutePolyline(encoded) : [];
-            if (!cancelled && path.length > 1) {
-              setDirections(null);
-              setRoutePath(path);
-              hasRoute = true;
-              return;
-            }
-            if (!response.ok) console.warn('[ActiveRide] Routes API failed:', data.error?.status || response.status);
-          } catch (error) {
-            console.warn('[ActiveRide] Routes API request failed:', error);
-          }
-        }
-
-        // Keep compatibility with projects that have the legacy Directions
-        // service enabled, but prefer the same Routes API used in request preview.
-        const result = await new Promise<{ result: any; status: string }>(resolve => {
-          const DirectionsService = new (window as any).google.maps.DirectionsService();
-          DirectionsService.route({
-            origin: new (window as any).google.maps.LatLng(origin.lat, origin.lng),
-            destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
-            travelMode: (window as any).google.maps.TravelMode.DRIVING,
-          }, (routeResult: any, status: string) => resolve({ result: routeResult, status }));
-        });
+        // Use the same road router for every pickup leg. Its high quality
+        // geometry follows the actual streets, and its fallback extracts the
+        // detailed Directions step paths instead of drawing a simplified chord.
+        const path = await getShortestAvoidHighwaysRoadRoute(origin, dest, apiKey);
         if (cancelled) return;
-        if (result.status === 'OK') {
-          setRoutePath(null);
-          setDirections(result.result);
+        if (path.length > 1) {
+          setRoutePath(path);
           hasRoute = true;
         } else {
-          console.error(`[ActiveRide] Road route to ${phase} failed:`, result.status);
-          setDirections(null);
           setRoutePath(null);
           hasRoute = false;
         }
@@ -1674,7 +1584,7 @@ export default function ActiveRide() {
       cancelled = true;
       window.clearTimeout(routeTimer);
     };
-  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup, isSharedRide, isPrivateRide, isDeliveryRide]);
+  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup, isSharedRide, isPrivateRide]);
 
   // Match the accept-preview map: zoom to the road route once for each leg so
   // the route is in view when the rider enters the restaurant or customer phase.
@@ -1683,9 +1593,7 @@ export default function ActiveRide() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !rideData) return;
-    const pickupRoutePoints = routePath
-      || directions?.routes?.[0]?.overview_path?.map(point => ({ lat: point.lat(), lng: point.lng() }))
-      || [];
+    const pickupRoutePoints = routePath || [];
     const hasPickupRoute = pickupRoutePoints.length > 1;
     const hasPrivateDropoffRoute = privateRideRoadPath.length > 1;
     const phaseKey = [
@@ -1718,7 +1626,7 @@ export default function ActiveRide() {
     map.fitBounds(bounds, 48);
     window.clearTimeout(mapMoveTimeoutRef.current);
     mapMoveTimeoutRef.current = window.setTimeout(() => { mapMoveRef.current = false; }, 1000);
-  }, [directions, routePath, sharedDropoffRoutes, privateRideRoadPath, rideData?.id, rideData?.dropoffLat, rideData?.dropoffLng, isHeadingToPickup, isSharedRide, isPrivateRide]);
+  }, [routePath, sharedDropoffRoutes, privateRideRoadPath, rideData?.id, rideData?.dropoffLat, rideData?.dropoffLng, isHeadingToPickup, isSharedRide, isPrivateRide]);
 
   const reportCategories = rideData && isDeliveryRide(rideData)
     ? DELIVERY_REPORT_CATEGORIES
@@ -3148,28 +3056,6 @@ export default function ActiveRide() {
                   strokeWeight: 6,
                   strokeOpacity: 0.9,
                   zIndex: 10,
-                }}
-              />
-            )}
-
-            {/* Legacy Directions service fallback route line. */}
-            {directions && (!isSharedRide || isHeadingToPickup) && (!isPrivateRide || isHeadingToPickup) && (
-              <DirectionsRenderer
-                directions={directions}
-                options={{
-                  suppressMarkers: true,
-                  // Keep the camera on the driver. Without this the renderer re-fits
-                  // the map to the whole route every time the directions refresh
-                  // (i.e. on every GPS update), so the pickup and drop-off endpoints
-                  // keep yanking the centre off the driver icon.
-                  preserveViewport: true,
-                  polylineOptions: {
-                    // Literal hex: Maps does not resolve CSS custom properties,
-                    // so `var(--success)` here left the route undrawn.
-                    strokeColor: isHeadingToPickup ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
-                    strokeWeight: 6,
-                    strokeOpacity: 0.9,
-                  },
                 }}
               />
             )}
