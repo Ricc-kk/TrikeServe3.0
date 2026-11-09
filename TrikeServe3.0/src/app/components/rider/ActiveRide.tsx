@@ -25,7 +25,8 @@ import useMapLoader from "@/lib/mapLoader";
 import { createDropoffMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes, type TerminalRoute } from "@/lib/terminalRoutes";
-import { DEFAULT_TERMINAL_COLOR, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
+import { DEFAULT_ROUTE_COLOR, DEFAULT_TERMINAL_COLOR, normalizeRouteColor, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
+import SharedRideRouteMap from "../ui/SharedRideRouteMap";
 import PassengerMessagingDB from "./PassengerMessagingDB";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { getProfileInitials } from "@/lib/profileInitials";
@@ -460,6 +461,7 @@ export default function ActiveRide() {
   const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [sharedDropoffRoutes, setSharedDropoffRoutes] = useState<SharedDropoffRoute[]>([]);
   const [sharedTerminalRoute, setSharedTerminalRoute] = useState<TerminalRoute | null>(null);
+  const [sharedTerminalRouteColor, setSharedTerminalRouteColor] = useState(DEFAULT_ROUTE_COLOR);
   const [privateRideRoadPath, setPrivateRideRoadPath] = useState<RideCoordinate[]>([]);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   // Whether the camera is locked to the driver. Defaults on so the opening view is
@@ -1313,6 +1315,7 @@ export default function ActiveRide() {
   useEffect(() => {
     if (!isSharedRide || !rideData?.lobbyId) {
       setSharedTerminalRoute(null);
+      setSharedTerminalRouteColor(DEFAULT_ROUTE_COLOR);
       return;
     }
 
@@ -1343,20 +1346,25 @@ export default function ActiveRide() {
       }
 
       if (!terminalId) {
-        if (!cancelled) setSharedTerminalRoute(null);
+        if (!cancelled) {
+          setSharedTerminalRoute(null);
+          setSharedTerminalRouteColor(DEFAULT_ROUTE_COLOR);
+        }
         return;
       }
 
       const { data: terminal, error } = await supabase
         .from('terminals')
-        .select('routes, boundary_polygon, road_width_m')
+        .select('routes, boundary_polygon, road_width_m, route_color')
         .eq('id', terminalId)
         .maybeSingle();
       if (cancelled) return;
       if (error || !terminal) {
         setSharedTerminalRoute(null);
+        setSharedTerminalRouteColor(DEFAULT_ROUTE_COLOR);
         return;
       }
+      setSharedTerminalRouteColor(normalizeRouteColor(terminal.route_color));
 
       const storedRoutes = normalizeTerminalRoutes(terminal.routes);
       const routes = (storedRoutes.length > 0
@@ -1418,9 +1426,9 @@ export default function ActiveRide() {
     rideData?.dropoffLng,
   ]);
 
-  // A shared ride has one colored road segment for each passenger stop. Route the
-  // ordered itinerary on the selected terminal road, so every segment keeps the
-  // color of the passenger who gets off at its end.
+  // Use the same selected-road map styling as the customer's active share ride.
+  // Drop-off markers still identify each passenger, while the whole planned path
+  // follows the terminal's saved route color.
   useEffect(() => {
     if (!isSharedRide || !rideData) {
       setSharedDropoffRoutes([]);
@@ -1623,6 +1631,8 @@ export default function ActiveRide() {
     const phaseKey = [
       rideData.id,
       isHeadingToPickup ? 'restaurant' : 'customer',
+      isSharedRide && hasPickupRoute ? 'terminal-approach-route' : '',
+      isSharedRide && sharedDropoffRoutes.length > 0 ? `selected-route-${sharedDropoffRoutes.length}` : '',
       isPrivateRide && isHeadingToPickup && hasPickupRoute ? 'pickup-route' : '',
       isPrivateRide && hasPrivateDropoffRoute ? 'dropoff-route' : '',
     ].join(':');
@@ -1636,11 +1646,12 @@ export default function ActiveRide() {
             ...privateRideRoadPath,
             ...(privateDropoffPosition ? [privateDropoffPosition] : []),
           ]
-      : isSharedRide && !isHeadingToPickup
-        ? sharedDropoffRoutes.flatMap(route => route.path)
-        : pickupRoutePoints.length > 0
-          ? pickupRoutePoints
-          : sharedDropoffRoutes.flatMap(route => route.path);
+      : isSharedRide
+        ? [
+            ...pickupRoutePoints,
+            ...sharedDropoffRoutes.flatMap(route => route.path),
+          ]
+        : pickupRoutePoints;
     if (routePoints.length < 2) return;
 
     const bounds = new (window as any).google.maps.LatLngBounds();
@@ -2983,6 +2994,39 @@ export default function ActiveRide() {
 
       <div className={`relative w-full transition-all duration-300 ${isMinimized ? 'h-[80vh]' : 'h-80'}`}>
         {isMapsLoaded ? (
+          isSharedRide ? (
+            <SharedRideRouteMap
+              mapContainerStyle={{ width: '100%', height: '100%' }}
+              center={mapCenter}
+              zoom={INITIAL_MAP_ZOOM}
+              options={{
+                disableDefaultUI: true,
+                gestureHandling: 'greedy',
+                disableDoubleClickZoom: true,
+              }}
+              driverLocation={driverLocation}
+              terminalPosition={coordinateFromValues(rideData.pickupLat, rideData.pickupLng)}
+              terminalMarkerColor={pickupTerminalMarkerColor}
+              terminalRouteColor={sharedTerminalRouteColor}
+              terminalRoutePaths={sharedDropoffRoutes.map(route => route.path)}
+              driverToTerminalRoutePath={isHeadingToPickup ? routePath || [] : []}
+              dropoffs={sharedDropoffStops.map((stop, index) => ({
+                id: stop.id,
+                position: stop.position,
+                title: `${stop.name} drop-off`,
+                color: stop.color,
+                stopNumber: index + 1,
+              }))}
+              onLoad={(map) => {
+                mapRef.current = map;
+                // Keep the same heading and gesture behavior as other driver
+                // ride maps while sharing the customer's live route renderer.
+                appliedHeadingRef.current = 0;
+                map.addListener('dragstart', stopFollowingOnDrag);
+                map.addListener('zoom_changed', stopFollowingOnZoom);
+              }}
+            />
+          ) : (
           <GoogleMap
             mapContainerStyle={{ width: '100%', height: '100%' }}
             // Initial camera only. Deliberately NOT the live driver position: this library
@@ -3093,6 +3137,7 @@ export default function ActiveRide() {
             )}
 
           </GoogleMap>
+          )
         ) : (
           <div className="h-full flex flex-col items-center justify-center bg-[var(--muted)] space-y-4 p-6">
             <Navigation className="w-12 h-12 text-[var(--primary)] animate-pulse" />

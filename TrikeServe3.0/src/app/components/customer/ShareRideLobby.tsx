@@ -12,6 +12,7 @@ import { MarkerF, Polyline } from "@react-google-maps/api";
 import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import RideMapStatusBanner from "../ui/RideMapStatusBanner";
+import SharedRideRouteMap from "../ui/SharedRideRouteMap";
 import useMapLoader from "@/lib/mapLoader";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
@@ -3183,10 +3184,32 @@ if (loading) {
         <div className="fixed inset-0 z-[2000] overflow-hidden bg-[var(--background)]">
           <div className="absolute inset-0">
             {isMapsLoaded ? (
-              <GoogleMap
+              <SharedRideRouteMap
                 mapContainerStyle={{ width: '100%', height: '100%' }}
                 center={lobbyMapInitialCenterRef.current}
                 zoom={15}
+                driverLocation={driverLocation}
+                terminalPosition={terminalMarkerPosition}
+                terminalMarkerColor={terminalMarkerColor}
+                terminalRouteColor={terminalRouteColor}
+                terminalRoutePaths={mapTerminalRoutePath.length > 1 ? [mapTerminalRoutePath] : []}
+                driverToTerminalRoutePath={driverToTerminalRoutePath}
+                dropoffs={mapDropoffStops.map((stop, index) => ({
+                  id: stop.key,
+                  position: stop.coords,
+                  title: 'Your drop-off',
+                  color: RIDE_MAP_DROPOFF_COLOR,
+                  stopNumber: index + 1,
+                }))}
+                options={{
+                  zoomControl: false,
+                  fullscreenControl: false,
+                  streetViewControl: false,
+                  mapTypeControl: false,
+                  clickableIcons: false,
+                  draggable: true,
+                  gestureHandling: 'greedy',
+                }}
                 onLoad={(map: any) => {
                   lobbyMapRef.current = map;
                   fitLobbyRouteBounds();
@@ -3198,67 +3221,7 @@ if (loading) {
                     lobbyMapWasManuallyMovedRef.current = true;
                   }
                 }}
-                options={{
-                  zoomControl: false,
-                  fullscreenControl: false,
-                  streetViewControl: false,
-                  mapTypeControl: false,
-                  clickableIcons: false,
-                  draggable: true,
-                  gestureHandling: 'greedy',
-                }}
-              >
-                <MapTypeToggle />
-                {driverLocation && (
-                  <MarkerF
-                    position={driverLocation}
-                    title="Driver Location"
-                    icon={createTricycleMarkerIcon()}
-                  />
-                )}
-                {terminalMarkerPosition && (
-                  <MarkerF position={terminalMarkerPosition} title="Terminal" icon={terminalMarkerIcon(terminalMarkerColor)} />
-                )}
-                {mapDropoffStops.map(stop => (
-                  <MarkerF
-                    key={stop.key}
-                    position={stop.coords}
-                    title="Your drop-off"
-                    icon={createDropoffMarkerIcon({ color: RIDE_MAP_DROPOFF_COLOR })}
-                    zIndex={20}
-                  />
-                ))}
-                {mapTerminalRoutePath.length > 0 && (
-                  <Polyline
-                    path={mapTerminalRoutePath}
-                    options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.22, strokeWeight: 10, geodesic: true, clickable: false }}
-                  />
-                )}
-                {mapTerminalRoutePath.length > 0 && (
-                  <Polyline
-                    path={mapTerminalRoutePath}
-                    options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.95, strokeWeight: 4, geodesic: true, clickable: false }}
-                  />
-                )}
-                {presentation !== 'page' && destinationRoutePath.length > 0 && (
-                  <Polyline
-                    path={destinationRoutePath}
-                    options={{ strokeColor: RIDE_MAP_DROPOFF_COLOR, strokeOpacity: 0.9, strokeWeight: 5, geodesic: true }}
-                  />
-                )}
-                {driverToTerminalRoutePath.length > 0 && (
-                  <Polyline
-                    path={driverToTerminalRoutePath}
-                    options={{
-                      strokeColor: RIDE_MAP_PICKUP_COLOR,
-                      strokeOpacity: 0.96,
-                      strokeWeight: 6,
-                      geodesic: true,
-                      zIndex: 1000,
-                    }}
-                  />
-                )}
-              </GoogleMap>
+              />
             ) : (
               <div className="absolute inset-0 bg-[var(--muted)]" aria-label="Loading ride map" />
             )}
