@@ -85,7 +85,7 @@ export default function OrderItemRatingPage() {
       try {
         const { data, error } = await supabase
           .from("orders")
-          .select("id, customer_id, customer_email, business_id, order_number, restaurant_id, restaurant_email, restaurant_name, status, items")
+          .select("id, customer_id, customer_email, business_id, order_number, restaurant_email, restaurant_name, status, items")
           .eq("id", orderId)
           .maybeSingle();
 
