@@ -2659,32 +2659,35 @@ export default function CustomerHome() {
      navigate,
    ]);
 
-   // Compute driver's route to pickup/dropoff location (real-time tracking)
+   // Keep the customer's live road route aligned with the driver's next stop:
+   // pickup before boarding, then this customer's destination for the ride.
    useEffect(() => {
-     if (activeShareRideMapDetails.isActive) {
+     const isLiveRide = ['driver-found', 'picking-up', 'in-transit'].includes(visibleRideStatus || '');
+     if (activeShareRideMapDetails.isActive || !rideStateBelongsToCurrentUser || !isLiveRide) {
        setDriverRoutePath([]);
        return;
      }
-     if (hasPassengerBeenPickedUp) {
+     const destination = hasPassengerBeenPickedUp ? dropoffCoords : pickupCoords;
+     if (!driverLocation || !destination || !isMapsLoaded || !(window as any).google) {
        setDriverRoutePath([]);
        return;
      }
-     if (!driverLocation || !pickupCoords || !isMapsLoaded || !(window as any).google || rideStatus !== 'driver-found') return;
 
-     // Determine if driver is going to pickup or dropoff
-     const destination = pickupCoords;
+     let active = true;
+     setDriverRoutePath([]);
 
      if (isDeliveryRide) {
-       let cancelled = false;
        void getShortestAvoidHighwaysRoadRoute(
          driverLocation,
          destination,
          GOOGLE_MAPS_API_KEY,
        ).then(path => {
-         if (!cancelled && path.length > 1) setDriverRoutePath(path);
+         if (active) setDriverRoutePath(path.length > 1 ? path : []);
+       }).catch(() => {
+         if (active) setDriverRoutePath([]);
        });
        return () => {
-         cancelled = true;
+         active = false;
        };
      }
 
@@ -2696,6 +2699,7 @@ export default function CustomerHome() {
          travelMode: (window as any).google.maps.TravelMode.DRIVING,
        },
        (result: any, status: string) => {
+         if (!active) return;
          if (status === 'OK' && result?.routes?.[0]) {
            const route = result.routes[0];
            // Guard on the resolved path, not on `overview_polyline.points`.
@@ -2704,11 +2708,16 @@ export default function CustomerHome() {
             // overview first discarded every route that needed that fallback and
             // left the map with no line at all during the ride.
             const path = routePathFromResult(route);
-            if (path.length > 0) setDriverRoutePath(path);
+            setDriverRoutePath(path);
+         } else {
+           setDriverRoutePath([]);
          }
        }
      );
-   }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, driverLocation, pickupCoords, isMapsLoaded, rideStatus, isDeliveryRide]);
+     return () => {
+       active = false;
+     };
+   }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, driverLocation, pickupCoords, dropoffCoords, isMapsLoaded, visibleRideStatus, rideStateBelongsToCurrentUser, isDeliveryRide]);
 
    // Delivery drop-off legs use the shortest available road route while
    // avoiding highway travel.
@@ -4517,7 +4526,7 @@ const getPrice = () => {
               })}
 
               {/* Driver location marker (real-time tracking) */}
-              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && driverLocation && visibleRideStatus === 'driver-found' && (
+              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && driverLocation && ['driver-found', 'picking-up', 'in-transit'].includes(visibleRideStatus || '') && (
                 <MarkerF
                   position={driverLocation}
                   title="Driver Location"
@@ -4529,8 +4538,8 @@ const getPrice = () => {
                 <Polyline path={routePath} options={buildNavigationRouteOptions(RIDE_MAP_DROPOFF_COLOR, 5)} />
               )}
 
-              {/* Driver route polyline (real-time) */}
-              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && !hasPassengerBeenPickedUp && driverRoutePath.length > 0 && visibleRideStatus === 'driver-found' && (
+              {/* Live road route to pickup, then from the driver to this customer's destination. */}
+              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && driverRoutePath.length > 0 && ['driver-found', 'picking-up', 'in-transit'].includes(visibleRideStatus || '') && (
                 <Polyline
                   path={driverRoutePath}
                   options={{

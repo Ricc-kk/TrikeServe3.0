@@ -224,18 +224,6 @@ function buildLobbyRouteItinerary(
   return finalStopDistance(reverse) < finalStopDistance(forward) ? reverse : forward;
 }
 
-function routeTravelDistanceFromPickup(
-  point: { lat: number; lng: number },
-  itinerary: LobbyRouteItinerary,
-): number | null {
-  const projection = projectPointAlongRoute(point, itinerary.path);
-  if (!projection) return null;
-  return projection.distanceAlong >= itinerary.pickupDistance
-    ? projection.distanceAlong - itinerary.pickupDistance
-    : (itinerary.totalDistance - itinerary.pickupDistance)
-      + (itinerary.totalDistance - projection.distanceAlong);
-}
-
 function cumulativePathDistances(path: Array<{ lat: number; lng: number }>): number[] {
   const distances = [0];
   for (let index = 1; index < path.length; index++) {
@@ -1368,9 +1356,9 @@ export default function ShareRideLobby({
     setPaymentModalPassengerId(pendingPassenger?.id || null);
   }, [lobby?.id, lobby?.status, lobby?.passengers_json, user?.id, terminalStatus, paymentModalPassengerId]);
 
-  // Calculate the ETA from the same ordered road itinerary used for shared
-  // drop-offs. While the driver is going to pickup this is one road route; once
-  // the ride is underway, include any remaining passenger stops before yours.
+  // Route the driver's live map line to the shared pickup, then directly to
+  // this customer's own next drop-off. Other passengers are not route stops on
+  // this customer's map.
   useEffect(() => {
     if (!driverLocation || !isMapsLoaded || !(window as any).google) {
       setDriverRoutePath([]);
@@ -1382,13 +1370,10 @@ export default function ShareRideLobby({
       || lobby?.driver_status === 'arrived'
       || (lobby?.status === 'driver_found' && !lobby?.driver_status);
     let dest: { lat: number; lng: number } | null = null;
-    let waypoints: Array<{ lat: number; lng: number }> = [];
 
     if (isHeadingToPickup && pickupCoords) {
       dest = pickupCoords;
-    } else if (dropoffCoords) {
-      dest = dropoffCoords;
-
+    } else {
       const passengers = normalizePassengers(lobby?.passengers_json);
       const ownPassengers = passengers.filter(passenger => Boolean(
         user?.id && (
@@ -1396,35 +1381,29 @@ export default function ShareRideLobby({
           passenger.id.startsWith(`${user.id}_companion_`)
         )
       ));
-      const targetPassenger = ownPassengers.find(passenger => passenger.id === user?.id) || ownPassengers[0];
+      const pendingOwnPassengers = ownPassengers.filter(passenger =>
+        !['dropped-off', 'completed'].includes(String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase())
+      );
+      const targetPassenger = pendingOwnPassengers.find(passenger => passenger.id === user?.id)
+        || pendingOwnPassengers[0]
+        || ownPassengers.find(passenger => passenger.id === user?.id)
+        || ownPassengers[0];
+      if (ownPassengers.length > 0 && pendingOwnPassengers.length === 0) {
+        setDriverRoutePath([]);
+        setEtaToDestination('Arrived');
+        return;
+      }
       const targetDropoffStatus = String(targetPassenger?.dropoff_status || targetPassenger?.dropoffStatus || '').toLowerCase();
       if (targetPassenger && ['dropped-off', 'completed'].includes(targetDropoffStatus)) {
         setDriverRoutePath([]);
         setEtaToDestination('Arrived');
         return;
       }
-      const remainingPassengers = passengers.filter(passenger =>
-        !['dropped-off', 'completed'].includes(String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase())
-      );
-      const itinerary = pickupCoords
-        ? buildLobbyRouteItinerary(remainingPassengers, pickupCoords, terminalRoutePath)
-        : null;
-      const targetStopIndex = targetPassenger
-        ? itinerary?.stops.findIndex(stop => stop.passenger.id === targetPassenger.id) ?? -1
-        : -1;
-
-      if (itinerary && targetStopIndex >= 0) {
-        const currentTravelDistance = routeTravelDistanceFromPickup(driverLocation, itinerary);
-        waypoints = itinerary.stops
-          .slice(0, targetStopIndex)
-          .filter(stop => {
-            const dropoffStatus = String(stop.passenger.dropoff_status || stop.passenger.dropoffStatus || '').toLowerCase();
-            const alreadyDroppedOff = ['dropped-off', 'completed'].includes(dropoffStatus);
-            const stillAhead = currentTravelDistance == null || stop.travelDistance > currentTravelDistance + 25;
-            return !alreadyDroppedOff && stillAhead;
-          })
-          .map(stop => stop.coords);
-      }
+      const targetLat = targetPassenger?.dropoffLat == null ? Number.NaN : Number(targetPassenger.dropoffLat);
+      const targetLng = targetPassenger?.dropoffLng == null ? Number.NaN : Number(targetPassenger.dropoffLng);
+      dest = Number.isFinite(targetLat) && Number.isFinite(targetLng)
+        ? { lat: targetLat, lng: targetLng }
+        : dropoffCoords;
     }
 
     if (!dest) {
@@ -1438,13 +1417,6 @@ export default function ShareRideLobby({
     DirectionsService.route({
       origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
       destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
-      ...(waypoints.length > 0 ? {
-        waypoints: waypoints.map(point => ({
-          location: new (window as any).google.maps.LatLng(point.lat, point.lng),
-          stopover: true,
-        })),
-        optimizeWaypoints: false,
-      } : {}),
       travelMode: (window as any).google.maps.TravelMode.DRIVING,
     }, (result: any, status: string) => {
       if (!active) return;
@@ -1479,7 +1451,6 @@ export default function ShareRideLobby({
     lobby?.passengers_json,
     pickupCoords,
     dropoffCoords,
-    terminalRoutePath,
     user?.id,
   ]);
 
