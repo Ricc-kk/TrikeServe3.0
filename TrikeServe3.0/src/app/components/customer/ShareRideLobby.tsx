@@ -3194,12 +3194,11 @@ if (loading) {
                 terminalRouteColor={terminalRouteColor}
                 terminalRoutePaths={mapTerminalRoutePath.length > 1 ? [mapTerminalRoutePath] : []}
                 driverToTerminalRoutePath={driverToTerminalRoutePath}
-                dropoffs={mapDropoffStops.map((stop, index) => ({
+                dropoffs={mapDropoffStops.map(stop => ({
                   id: stop.key,
                   position: stop.coords,
                   title: 'Your drop-off',
                   color: RIDE_MAP_DROPOFF_COLOR,
-                  stopNumber: index + 1,
                 }))}
                 options={{
                   zoomControl: false,
