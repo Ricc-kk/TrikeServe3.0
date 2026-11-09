@@ -2314,13 +2314,21 @@ export default function ActiveRide() {
               orderUpdateWarning = 'The delivery was cancelled, but the food order status could not be updated. Please contact the restaurant.';
             }
 
-            notifyDeliveryStatus(rideData, 'cancelled', cancellationMessage);
           }
         }
       }
 
       if (!isDelivery) {
         await notifyRideProgress(rideData, 'cancelled', reason);
+      } else {
+        const reassignmentMessage = 'The assigned driver cancelled this delivery. '
+          + (reason ? 'Reason: ' + reason + '. ' : '')
+          + 'The order is back in the queue while another driver is being found.';
+        await notifyDeliveryStatus(
+          rideData,
+          deliveryReturnedToSearch ? 'driver-cancelled' : 'cancelled',
+          deliveryReturnedToSearch ? reassignmentMessage : cancellationMessage,
+        );
       }
 
       logAudit({

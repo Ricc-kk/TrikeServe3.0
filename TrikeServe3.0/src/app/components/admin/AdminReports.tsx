@@ -125,8 +125,8 @@ export default function AdminReports() {
 
   return (
     <AdminShell
-      title="Ride Reports"
-      subtitle="Reports submitted by riders and passengers about their rides"
+      title="Ride & Order Reports"
+      subtitle="Reports submitted by customers, riders, and passengers"
     >
 
         <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
@@ -134,12 +134,12 @@ export default function AdminReports() {
             <EmptyState
               icon={ShieldCheck}
               title="Super Admin only"
-              description="Rider and passenger ride reports are reviewed by the Super Admin."
+              description="Customer, rider, and passenger reports are reviewed by the Super Admin."
               filipino="Ito ay para sa Super Admin lamang."
             />
           ) : (
             <>
-              <AdminPageIntro eyebrow="Ride reports" title="A safer ride starts with listening." description="Review passenger and rider concerns, investigate ride issues, and keep track of every outcome." />
+              <AdminPageIntro eyebrow="Service reports" title="A safer service starts with listening." description="Review customer, passenger, and rider concerns, investigate service issues, and keep track of every outcome." />
               <AdminMetricCards loading={loading} items={[
                 { label: 'Total reports', value: reports.length, Icon: Flag },
                 { label: 'Needs attention', value: reports.filter(r => r.status === 'pending' || r.status === 'reviewing').length, Icon: Clock3, tone: 'amber' },
@@ -250,7 +250,7 @@ export default function AdminReports() {
                   description={
                     hasFilter
                       ? "Try a different search term or status."
-                      : "Ride reports from riders and passengers will appear here."
+                      : "Customer, rider, and passenger reports will appear here."
                   }
 
                   action={
@@ -270,9 +270,12 @@ export default function AdminReports() {
                   {filtered.map((report) => {
                     const meta = statusMeta(report.status);
                     const isRiderReport = report.category.startsWith("Rider report: ");
+                    const isOrderReport = report.category.startsWith("Order report: ");
                     const categoryLabel = isRiderReport
                       ? report.category.slice("Rider report: ".length)
-                      : report.category;
+                      : isOrderReport
+                        ? report.category.slice("Order report: ".length)
+                        : report.category;
                     return (
                       <Card key={report.id} className="min-w-0 gap-0 rounded-3xl p-4 sm:p-5 border border-line bg-card">
                         <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -280,14 +283,20 @@ export default function AdminReports() {
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <Badge className={meta.badge}>{meta.label}</Badge>
                               {isRiderReport && <Badge variant="outline">Rider report</Badge>}
+                              {isOrderReport && <Badge variant="outline">Order report</Badge>}
                               <span className="text-sm font-bold text-[var(--ink)]">{categoryLabel}</span>
                             </div>
                             <p className="text-sm text-[var(--ink)] break-words">{report.description}</p>
                             <div className="mt-3 space-y-1.5 break-words text-xs text-[var(--muted-foreground)]">
-                              {report.ride_route && <p>🛣️ {report.ride_route}</p>}
-                              {!isRiderReport && (
+                              {report.ride_route && <p>{isOrderReport ? "Order: " : "Route: "}{report.ride_route}</p>}
+                              {!isRiderReport && !isOrderReport && (
                                 <p>
                                   👤 Driver: <span className="font-semibold text-[var(--ink)]">{report.driver_name || "Driver"}</span>
+                                </p>
+                              )}
+                              {isOrderReport && report.driver_name && (
+                                <p>
+                                  👤 Delivery driver: <span className="font-semibold text-[var(--ink)]">{report.driver_name}</span>
                                 </p>
                               )}
                               <p>

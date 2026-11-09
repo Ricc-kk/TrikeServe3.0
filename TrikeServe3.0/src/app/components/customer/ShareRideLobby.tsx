@@ -977,9 +977,13 @@ export default function ShareRideLobby({
               route.buffer_m,
             ))
           : null;
+        const passengerRouteId = ownPassenger?.route_id || selectedRouteId;
+        const passengerSelectedRoute = passengerRouteId
+          ? routes.find(route => route.id === passengerRouteId)
+          : null;
         const selectedRoute = currentSelectionMatchesLobby
           ? null
-          : routeForPassenger || routes.find(route => route.enabled) || routes[0];
+          : passengerSelectedRoute || routeForPassenger || routes.find(route => route.enabled) || routes[0];
         setTerminalRoutePath(currentSelectionMatchesLobby ? routePoints! : selectedRoute?.points || []);
         setTerminalRouteColor(normalizeRouteColor(data.route_color));
         setTerminalMarkerColor(normalizeTerminalColor(data.marker_color));
@@ -995,18 +999,25 @@ export default function ShareRideLobby({
     return () => {
       active = false;
     };
-  }, [lobby?.terminal_id, lobby?.passengers_json, selectedTerminalId, terminalCoords, routePoints, dropoffCoords, user?.id]);
+  }, [lobby?.terminal_id, lobby?.passengers_json, selectedTerminalId, selectedRouteId, terminalCoords, routePoints, dropoffCoords, user?.id]);
 
   const fitLobbyRouteBounds = useCallback(() => {
     const hasAssignedDriver = ['driver_found', 'in_progress'].includes(String(lobby?.status || ''));
+    const assignedPage = presentation === 'page' && hasAssignedDriver;
+    const routeStart = presentation === 'page'
+      ? terminalMarkerPosition || terminalCoords || pickupCoords
+      : pickupCoords;
+    const routeSignature = terminalRoutePath.length > 0
+      ? `${terminalRoutePath.length}:${terminalRoutePath[0].lat}:${terminalRoutePath[0].lng}:${terminalRoutePath[terminalRoutePath.length - 1].lat}:${terminalRoutePath[terminalRoutePath.length - 1].lng}`
+      : 'empty';
     const liveRideFitKey = hasAssignedDriver
-      ? `${lobby?.id || ''}:${lobby?.driver_id || ''}:${lobby?.status || ''}`
+      ? `${lobby?.id || ''}:${lobby?.driver_id || ''}:${lobby?.status || ''}:${routeSignature}:${routeStart?.lat ?? ''}:${routeStart?.lng ?? ''}`
       : null;
     if (!hasAssignedDriver) lobbyMapFittedRideKeyRef.current = null;
     if (lobbyMapWasManuallyMovedRef.current) return;
     if (liveRideFitKey && lobbyMapFittedRideKeyRef.current === liveRideFitKey) return;
     // Wait for the driver's first location before fitting the active map so
-    // the driver's approach route is inside the initial viewport.
+    // the tricycle marker and the selected terminal route are both in view.
     if (liveRideFitKey && !driverLocation) return;
 
     const map = lobbyMapRef.current;
@@ -1014,7 +1025,7 @@ export default function ShareRideLobby({
     if (!map || !maps?.LatLngBounds) return;
 
     const visibleRoutePath = presentation === 'page'
-      ? buildRouteThroughDropoff(terminalRoutePath, pickupCoords, dropoffCoords)
+      ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords)
       : terminalRoutePath;
     const passengerDropoffs = presentation === 'page' ? [] : (lobby?.passengers_json || [])
       .filter(passenger => Boolean(
@@ -1034,21 +1045,21 @@ export default function ShareRideLobby({
     );
     const points = [
       ...visibleRoutePath,
-      ...driverRoutePath,
+      ...(assignedPage ? [] : driverRoutePath),
+      ...(assignedPage && routeStart ? [routeStart] : []),
       ...endpoints,
       ...(driverLocation ? [driverLocation] : []),
     ];
     if (points.length === 0) return;
     const bounds = new maps.LatLngBounds();
     points.forEach((point) => bounds.extend(point));
-    const assignedPage = presentation === 'page' && hasAssignedDriver;
     lobbyMapIsProgrammaticallyFittingRef.current = true;
     map.fitBounds(bounds, assignedPage ? { top: 88, right: 24, bottom: 340, left: 24 } : 24);
     window.setTimeout(() => {
       lobbyMapIsProgrammaticallyFittingRef.current = false;
     }, 500);
     if (liveRideFitKey) lobbyMapFittedRideKeyRef.current = liveRideFitKey;
-  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.id, lobby?.driver_id, lobby?.passengers_json, lobby?.status, user?.id, presentation, driverLocation, driverRoutePath]);
+  }, [terminalRoutePath, pickupCoords, dropoffCoords, terminalCoords, terminalMarkerPosition, lobby?.id, lobby?.driver_id, lobby?.passengers_json, lobby?.status, user?.id, presentation, driverLocation, driverRoutePath]);
 
   useEffect(() => {
     fitLobbyRouteBounds();
@@ -2571,11 +2582,14 @@ if (loading) {
       ? haversineDistanceMeters(pickupCoords, a.coords) - haversineDistanceMeters(pickupCoords, b.coords)
       : 0,
   );
+  const showAssignedRidePage = presentation === 'page' && ['driver_found', 'in_progress'].includes(lobby.status);
+  const routeStart = presentation === 'page'
+    ? terminalMarkerPosition || terminalCoords || pickupCoords
+    : pickupCoords;
   const mapTerminalRoutePath = presentation === 'page'
-    ? buildRouteThroughDropoff(terminalRoutePath, pickupCoords, dropoffCoords)
+    ? buildRouteThroughDropoff(terminalRoutePath, routeStart, dropoffCoords)
     : terminalRoutePath;
 
-  const showAssignedRidePage = presentation === 'page' && ['driver_found', 'in_progress'].includes(lobby.status);
   const normalizedDriverStatus = String(
     lobby.driver_status || (lobby.status === 'driver_found' ? 'on-the-way' : 'in-progress'),
   ).toLowerCase();
@@ -2898,8 +2912,8 @@ if (loading) {
                       options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.95, strokeWeight: 4, geodesic: true, clickable: false }}
                     />
                   )}
-                  {/* Destination route line (pickup to dropoff) */}
-                  {destinationRoutePath.length > 0 && (
+                  {/* The active share ride page follows the terminal's saved road. */}
+                  {!showAssignedRidePage && destinationRoutePath.length > 0 && (
                     <Polyline
                       path={destinationRoutePath}
                       options={{
@@ -2910,8 +2924,8 @@ if (loading) {
                       }}
                     />
                   )}
-                  {/* Keep the live driver leg above the shared destination route. */}
-                  {driverRoutePath.length > 0 && (
+                  {/* Keep the live driver leg visible outside the assigned page map. */}
+                  {!showAssignedRidePage && driverRoutePath.length > 0 && (
                     <Polyline
                       path={driverRoutePath}
                       options={{
@@ -3050,13 +3064,13 @@ if (loading) {
                     options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.95, strokeWeight: 4, geodesic: true, clickable: false }}
                   />
                 )}
-                {destinationRoutePath.length > 0 && (
+                {!showAssignedRidePage && destinationRoutePath.length > 0 && (
                   <Polyline
                     path={destinationRoutePath}
                     options={{ strokeColor: RIDE_MAP_DROPOFF_COLOR, strokeOpacity: 0.9, strokeWeight: 5, geodesic: true }}
                   />
                 )}
-                {driverRoutePath.length > 0 && (
+                {!showAssignedRidePage && driverRoutePath.length > 0 && (
                   <Polyline
                     path={driverRoutePath}
                     options={{

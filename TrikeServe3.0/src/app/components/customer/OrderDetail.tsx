@@ -1,4 +1,4 @@
-import { ArrowLeft, Package, Clock, MapPin, CreditCard, Star, Navigation, CheckCircle, Phone, MessageCircle } from "lucide-react";
+import { ArrowLeft, Package, Clock, MapPin, CreditCard, Star, Navigation, CheckCircle, Phone, MessageCircle, Flag, X, Check } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
 import FullSizeImagePreview from "../ui/FullSizeImagePreview";
@@ -13,7 +13,7 @@ import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
 import { supabase } from "../../../lib/supabase";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
-import { geocodeAddress, supabaseHelpers } from "@/lib/supabase";
+import { geocodeAddress, logAudit, supabaseHelpers } from "@/lib/supabase";
 import { getOrderProgress, isRiderHeadingToRestaurant } from "@/lib/orderProgress";
 import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
 import { useState, useEffect, useRef, useMemo } from "react";
@@ -168,6 +168,15 @@ const statusLabels: Record<string, string> = {
   'cancelled': 'Cancelled',
 };
 
+const ORDER_REPORT_CATEGORIES = [
+  'Missing or incorrect items',
+  'Food quality issue',
+  'Delivery issue',
+  'Driver behavior',
+  'Payment issue',
+  'Other',
+];
+
 export default function OrderDetail() {
   const navigate = useNavigate();
   const { toggleChatOverlay, recentChatHeads } = useChatHeadVisibility();
@@ -225,6 +234,12 @@ export default function OrderDetail() {
   const [showItemRatingPrompt, setShowItemRatingPrompt] = useState(false);
   // Cancelling an order asks for a reason first.
   const [showCancelOrderPrompt, setShowCancelOrderPrompt] = useState(false);
+  const [showOrderReport, setShowOrderReport] = useState(false);
+  const [orderReportCategory, setOrderReportCategory] = useState(ORDER_REPORT_CATEGORIES[0]);
+  const [orderReportDescription, setOrderReportDescription] = useState('');
+  const [isSubmittingOrderReport, setIsSubmittingOrderReport] = useState(false);
+  const [orderReportError, setOrderReportError] = useState<string | null>(null);
+  const [orderReportSubmitted, setOrderReportSubmitted] = useState(false);
   const [ratingError, setRatingError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
@@ -233,7 +248,15 @@ export default function OrderDetail() {
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [etaToActiveStop, setEtaToActiveStop] = useState<string | null>(null);
   const trackingMapRef = useRef<any>(null);
+  const trackingMapWasManuallyMovedRef = useRef(false);
+  const trackingMapIsProgrammaticallyFittingRef = useRef(false);
+  const [trackingMapWasManuallyMoved, setTrackingMapWasManuallyMoved] = useState(false);
   const attemptedRestaurantGeocodeRef = useRef<string | null>(null);
+  useEffect(() => {
+    trackingMapWasManuallyMovedRef.current = false;
+    trackingMapIsProgrammaticallyFittingRef.current = false;
+    setTrackingMapWasManuallyMoved(false);
+  }, [order?.id]);
   const customerLocation = useMemo(() => parseAddressCoordinates(order?.address), [order?.address]);
   const liveDriverStatus = order?.driverStatus ?? null;
   const normalizedDriverStatus = liveDriverStatus?.trim().toLowerCase().replace(/_/g, '-') ?? '';
@@ -706,13 +729,15 @@ export default function OrderDetail() {
     return () => { active = false; };
   }, [driverLocation, activeTrackingDestination?.lat, activeTrackingDestination?.lng, isMapsLoaded, isDriverAtRestaurant, isRiderEnRouteToRestaurant]);
 
-  // Keep the driver and active destination in view as the route updates.
-  useEffect(() => {
-    const map = trackingMapRef.current;
+  const fitTrackingMapToRoute = (map: any) => {
     const maps = (window as any).google?.maps;
     if (!map || !driverLocation) return;
+    trackingMapIsProgrammaticallyFittingRef.current = true;
     if (!activeTrackingDestination || !maps?.LatLngBounds) {
       map.setCenter(driverLocation);
+      window.setTimeout(() => {
+        trackingMapIsProgrammaticallyFittingRef.current = false;
+      }, 500);
       return;
     }
 
@@ -721,6 +746,21 @@ export default function OrderDetail() {
     bounds.extend(activeTrackingDestination);
     routePath.forEach((point) => bounds.extend(point));
     map.fitBounds(bounds, 28);
+    window.setTimeout(() => {
+      trackingMapIsProgrammaticallyFittingRef.current = false;
+    }, 500);
+  };
+
+  const recenterTrackingMap = () => {
+    trackingMapWasManuallyMovedRef.current = false;
+    setTrackingMapWasManuallyMoved(false);
+    fitTrackingMapToRoute(trackingMapRef.current);
+  };
+
+  // Keep the live route in view until the customer deliberately moves the map.
+  useEffect(() => {
+    if (trackingMapWasManuallyMovedRef.current) return;
+    fitTrackingMapToRoute(trackingMapRef.current);
   }, [driverLocation, activeTrackingDestination?.lat, activeTrackingDestination?.lng, routePath]);
 
   const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
@@ -855,6 +895,55 @@ export default function OrderDetail() {
     }
   };
 
+  const closeOrderReport = () => {
+    setShowOrderReport(false);
+    setOrderReportSubmitted(false);
+    setOrderReportError(null);
+  };
+
+  const submitOrderReport = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!order) return;
+    if (!orderReportDescription.trim()) {
+      setOrderReportError('Please describe what happened.');
+      return;
+    }
+
+    setIsSubmittingOrderReport(true);
+    setOrderReportError(null);
+    try {
+      const { error: reportError } = await supabaseHelpers.createRideReport({
+        rideId: order.id,
+        reporterId: user?.id,
+        reporterName: user?.name,
+        reporterEmail: user?.email,
+        driverId: order.driverId,
+        driverName: order.driverName,
+        category: 'Order report: ' + orderReportCategory,
+        description: orderReportDescription.trim(),
+        rideRoute: 'Order #' + order.orderNumber + ' · ' + order.restaurantName,
+      });
+      if (reportError) throw reportError;
+
+      void logAudit({
+        action: 'report_order',
+        actorRole: 'customer',
+        entityType: 'order',
+        entityId: order.id,
+        summary: 'Reported order #' + order.orderNumber + ': ' + orderReportCategory,
+        details: { category: orderReportCategory, orderNumber: order.orderNumber, restaurantName: order.restaurantName },
+        actorEmail: user?.email,
+        actorName: user?.name,
+      });
+      setOrderReportSubmitted(true);
+    } catch (reportSubmissionError) {
+      console.error('[OrderDetail] Failed to submit order report:', reportSubmissionError);
+      setOrderReportError('Could not submit your report. Please try again.');
+    } finally {
+      setIsSubmittingOrderReport(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-surface pb-6">
       {/* Header */}
@@ -870,6 +959,21 @@ export default function OrderDetail() {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                setOrderReportCategory(ORDER_REPORT_CATEGORIES[0]);
+                setOrderReportDescription('');
+                setOrderReportError(null);
+                setOrderReportSubmitted(false);
+                setShowOrderReport(true);
+              }}
+              aria-label="Report this order"
+              className="flex min-h-12 min-w-14 flex-col items-center justify-center gap-0.5 rounded-xl border border-[var(--error)]/25 px-2 py-1.5 transition-colors hover:bg-[var(--muted)]"
+              title="Report this order"
+            >
+              <Flag className="size-5 text-[var(--error)]" />
+              <span className="text-[10px] font-bold leading-none text-[var(--error)]">Report</span>
+            </button>
             {isActiveDelivery && order.driverId && (
               <button onClick={handleChatWithDriver} className="flex flex-col items-center gap-0.5 p-1.5 hover:bg-[var(--muted)] rounded-lg transition-colors" title="Chat with Driver">
                 <MessageCircle className="w-5 h-5 text-[var(--info)]" />
@@ -931,22 +1035,26 @@ export default function OrderDetail() {
                 <Navigation className="w-4 h-4 text-white/80" />
               </div>
             </div>
-            <GoogleMap
+            <div className="relative">
+              <GoogleMap
               mapContainerStyle={{ width: '100%', height: '220px' }}
               defaultCenter={driverLocation}
               defaultZoom={13}
-              options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'none' }}
+              options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, draggable: true, gestureHandling: 'greedy' }}
               onLoad={(map) => {
                 trackingMapRef.current = map;
-                const maps = (window as any).google?.maps;
-                if (maps?.LatLngBounds && activeTrackingDestination) {
-                  const bounds = new maps.LatLngBounds();
-                  bounds.extend(driverLocation);
-                  bounds.extend(activeTrackingDestination);
-                  map.fitBounds(bounds, 28);
-                }
+                fitTrackingMapToRoute(map);
               }}
               onUnmount={() => { trackingMapRef.current = null; }}
+              onDragStart={() => {
+                trackingMapWasManuallyMovedRef.current = true;
+                setTrackingMapWasManuallyMoved(true);
+              }}
+              onZoomChanged={() => {
+                if (trackingMapIsProgrammaticallyFittingRef.current) return;
+                trackingMapWasManuallyMovedRef.current = true;
+                setTrackingMapWasManuallyMoved(true);
+              }}
             >
               <MapTypeToggle />
               {restaurantLocation && (
@@ -971,7 +1079,20 @@ export default function OrderDetail() {
                   }}
                 />
               )}
-            </GoogleMap>
+              </GoogleMap>
+              {trackingMapWasManuallyMoved && (
+                <button
+                  type="button"
+                  onClick={recenterTrackingMap}
+                  aria-label="Recenter live delivery map"
+                  title="Recenter live delivery map"
+                  className="absolute bottom-3 right-3 z-[500] flex min-h-10 items-center gap-2 rounded-full border border-line bg-surface/95 px-3 text-xs font-semibold text-[var(--ink)] shadow-lg backdrop-blur-sm active:scale-95"
+                >
+                  <Navigation className="size-4 text-[var(--primary)]" />
+                  Recenter
+                </button>
+              )}
+            </div>
             <div className="px-4 py-2.5 bg-surface border-t border-[var(--border)] flex items-center justify-between">
               <p className="text-xs font-semibold text-[var(--ink)]">
                 {order.driverName && <span className="text-[var(--muted-foreground)]">Driver: {order.driverName} • </span>}
@@ -1319,6 +1440,96 @@ export default function OrderDetail() {
           </Card>
         )}
       </div>
+
+      {showOrderReport && order && (
+        <div className="fixed inset-0 z-[3500] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="order-report-title"
+            className="max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-surface shadow-xl sm:max-w-md sm:rounded-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-[var(--border)] p-5">
+              <h3 id="order-report-title" className="text-lg font-bold text-[var(--ink)]">Report this order</h3>
+              <button
+                type="button"
+                aria-label="Close order report"
+                onClick={closeOrderReport}
+                className="grid size-11 place-items-center rounded-full transition-colors hover:bg-[var(--muted)]"
+              >
+                <X className="size-5 text-[var(--muted-foreground)]" />
+              </button>
+            </div>
+
+            {orderReportSubmitted ? (
+              <div className="p-6 text-center">
+                <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-[var(--success-soft)]">
+                  <Check className="size-7 text-[var(--success)]" />
+                </div>
+                <h4 className="text-base font-bold text-[var(--ink)]">Report submitted</h4>
+                <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+                  Our admin team will review your order concern. Thank you for letting us know.
+                </p>
+                <button
+                  type="button"
+                  onClick={closeOrderReport}
+                  className="mt-5 w-full rounded-2xl bg-[var(--primary)] py-3.5 font-bold text-white transition-transform active:scale-95"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={submitOrderReport} className="space-y-4 p-5">
+                <div className="rounded-xl bg-[var(--muted)] p-3 text-xs text-[var(--muted-foreground)]">
+                  <p className="truncate font-semibold text-[var(--ink)]">
+                    Order #{order.orderNumber} · {order.restaurantName}
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="order-report-category" className="mb-1.5 block text-xs font-semibold text-[var(--muted-foreground)]">
+                    What is the issue?
+                  </label>
+                  <select
+                    id="order-report-category"
+                    value={orderReportCategory}
+                    onChange={(event) => setOrderReportCategory(event.target.value)}
+                    className="w-full rounded-xl border border-line bg-surface p-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--primary)]"
+                  >
+                    {ORDER_REPORT_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="order-report-details" className="mb-1.5 block text-xs font-semibold text-[var(--muted-foreground)]">
+                    Details
+                  </label>
+                  <textarea
+                    id="order-report-details"
+                    value={orderReportDescription}
+                    onChange={(event) => setOrderReportDescription(event.target.value)}
+                    rows={4}
+                    placeholder="Tell us what happened..."
+                    className="w-full resize-none rounded-xl border border-line bg-surface p-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--primary)]"
+                  />
+                </div>
+
+                {orderReportError && <p className="text-xs text-[var(--error)]">{orderReportError}</p>}
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingOrderReport}
+                  className="w-full rounded-2xl bg-[var(--primary)] py-3.5 font-bold text-white transition-transform active:scale-95 disabled:opacity-50"
+                >
+                  {isSubmittingOrderReport ? 'Submitting...' : 'Submit report'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Cancel Order Popup — collects a reason before cancelling */}
       <ReasonPromptModal

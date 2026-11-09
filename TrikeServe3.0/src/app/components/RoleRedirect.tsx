@@ -1,22 +1,31 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
 import { effectiveRole, ROLE_HOME } from '../../lib/roleAccess';
+import { consumeAuthReturnPath } from '../../lib/authReturnPath';
 
 export default function RoleRedirect() {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
+  const redirectStarted = useRef(false);
 
   useEffect(() => {
-    if (!isLoading) {
-      if (user) {
-        // Customers land on the hub, not straight in the food tab: rides and
-        // food are both offered from Home, so the hub is the real landing page.
-        const role = effectiveRole(user.role, user.isVerified);
-        navigate((role && ROLE_HOME[role]) || '/', { replace: true });
-      } else {
-        navigate('/', { replace: true });
+    if (isLoading || redirectStarted.current) return;
+    redirectStarted.current = true;
+
+    if (user) {
+      const returnPath = consumeAuthReturnPath();
+      if (returnPath) {
+        navigate(returnPath, { replace: true });
+        return;
       }
+
+      // Customers land on the hub, not straight in the food tab: rides and
+      // food are both offered from Home, so the hub is the real landing page.
+      const role = effectiveRole(user.role, user.isVerified);
+      navigate((role && ROLE_HOME[role]) || '/', { replace: true });
+    } else {
+      navigate('/', { replace: true });
     }
   }, [user, isLoading, navigate]);
 

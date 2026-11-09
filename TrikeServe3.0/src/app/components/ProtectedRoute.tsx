@@ -1,6 +1,9 @@
-import { Navigate } from 'react-router';
+import { useEffect } from 'react';
+import { Navigate, useLocation } from 'react-router';
 import { useAuth, UserRole } from '../contexts/AuthContext';
 import { effectiveRole, ROLE_HOME } from '../../lib/roleAccess';
+import { rememberAuthReturnPath } from '../../lib/authReturnPath';
+import Login from './Login';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -9,6 +12,13 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const { user, isLoading } = useAuth();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      rememberAuthReturnPath(location.pathname, location.search, location.hash);
+    }
+  }, [isLoading, user, location.pathname, location.search, location.hash]);
 
   if (isLoading) {
     return (
@@ -22,7 +32,7 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
   }
 
   if (!user) {
-    return <Navigate to="/" replace />;
+    return <Login />;
   }
 
   // An unapproved business or rider routes as a customer, so their own UI is

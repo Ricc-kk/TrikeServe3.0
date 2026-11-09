@@ -922,7 +922,6 @@ export default function RiderProfile() {
           accent="var(--info)"
           onDone={() => {
             logout();
-            navigate("/");
           }}
         />
       )}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { LogOut, Palette, ShieldCheck, UserRound, ArrowUpRight } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import { useAuth } from "../../contexts/AuthContext";
 import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
 import ConfirmationModal from "../ui/confirmation-modal";
@@ -8,14 +8,12 @@ import AdminShell from "./AdminShell";
 import AdminPageIntro from "./AdminPageIntro";
 
 export default function AdminSettings() {
-  const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const isSuperAdmin = user?.adminType === 'business_customer';
 
   const handleLogout = () => {
     logout();
-    navigate('/');
   };
 
   return (

@@ -359,7 +359,6 @@ export default function BusinessAccount() {
             accent="var(--info)"
             onDone={() => {
               logout();
-              navigate("/");
             }}
           />
         )}

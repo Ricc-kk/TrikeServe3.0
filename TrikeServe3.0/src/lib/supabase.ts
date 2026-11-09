@@ -3178,6 +3178,11 @@ export const supabaseHelpers = {
         message: message || 'The driver cancelled this delivery.',
         emoji: '⚠️',
       },
+      'driver-cancelled': {
+        title: 'Finding another driver',
+        message: message || 'The driver cancelled this delivery. The order is back in the queue for another driver.',
+        emoji: '🔄',
+      },
     };
 
     const label = statusLabels[status] || {
@@ -3215,6 +3220,10 @@ export const supabaseHelpers = {
         'awaiting-payment': { title: 'At customer\'s location', message: 'The delivery driver is at the customer\'s location completing the delivery.' },
         'completed': { title: 'Delivery completed', message: 'This order has been delivered successfully.' },
         'cancelled': { title: 'Delivery cancelled', message: message || 'The driver cancelled this delivery.' },
+        'driver-cancelled': {
+          title: 'Finding another driver',
+          message: message || 'The driver cancelled this delivery. The order is back in the queue for another driver.',
+        },
       };
       const bizLabel = businessLabels[status] || { title: 'Delivery update', message: message || 'The delivery status has been updated.' };
       notifications.push({
@@ -3248,7 +3257,8 @@ export const supabaseHelpers = {
         'dropped-off': message || "I've arrived at your delivery address.",
         'awaiting-payment': "I'm almost there — please prepare your payment.",
         completed: "I've completed your delivery. Enjoy your meal!",
-        cancelled: "I've cancelled this delivery.",
+        cancelled: message || "I've cancelled this delivery.",
+        'driver-cancelled': message || 'The driver cancelled this delivery. The order is back in the queue for another driver.',
       };
       const businessChatMessages: Record<string, string> = {
         'on-the-way': "I'm on my way to pick up this order.",
@@ -3257,7 +3267,8 @@ export const supabaseHelpers = {
         'dropped-off': "I've arrived at the customer's delivery address.",
         'awaiting-payment': "I'm at the customer's location completing the delivery.",
         completed: "I've completed this order.",
-        cancelled: "I've cancelled this delivery.",
+        cancelled: message || "I've cancelled this delivery.",
+        'driver-cancelled': message || 'The driver cancelled this delivery. The order is back in the queue for another driver.',
       };
       const recipientMessages: Array<Promise<{ data: any; error: any }>> = [];
       const customerMessage = customerChatMessages[status] || "I've updated the delivery status.";

@@ -3793,6 +3793,13 @@ export default function CustomerHome() {
     ?? nearestTerminal?.id
     ?? null;
   const activeRideTerminalId = activeRideLobby?.terminal_id || activeRideRequest?.terminal_id || selectedTerminalId;
+  const activeRideTerminalCenter = useMemo(() => {
+    const terminal = terminals.find(item => item.id === activeRideTerminalId);
+    if (!terminal) return null;
+    const lat = Number(terminal.center_lat);
+    const lng = Number(terminal.center_lng);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  }, [activeRideTerminalId, terminals]);
   const activeRideTerminalMarkerColor = normalizeTerminalColor(
     terminals.find(terminal => terminal.id === activeRideTerminalId)?.marker_color,
   );
@@ -3855,21 +3862,30 @@ export default function CustomerHome() {
     selectedTerminalRouteId,
   ]);
   const isPrivateRideMap = (isActivePrivateRidePage || isPrivateRide) && !isActiveShareRideMap;
+  const isPrivateRideSearching = isPrivateRideMap && rideStateBelongsToCurrentUser && visibleRideStatus === 'searching';
   const isPrivateRideInProgress = isPrivateRideMap && rideStateBelongsToCurrentUser &&
     ['driver-found', 'picking-up', 'in-transit'].includes(visibleRideStatus || '');
+  const privateRideRouteOrigin = isPrivateRideSearching ? activeRideTerminalCenter : pickupCoords;
+  const shouldShowPrivateRideRoute = isPrivateRideSearching || isPrivateRideInProgress;
   const activeDestinationRoutePath = destinationRoutePath;
 
-  // A restored active ride can load its coordinates after the map mounts. Fit
-  // both ends once so the destination leg is on screen while the driver is
-  // still heading to pickup.
+  // Fit the terminal-to-drop-off preview while searching, then fit the booked
+  // pickup-to-drop-off ride once a driver accepts the request.
   useEffect(() => {
-    if (!isPrivateRideInProgress) {
+    if (!shouldShowPrivateRideRoute) {
       activePrivateRideMapFitRef.current = null;
       return;
     }
-    if (!isMapsLoaded || !customerMapReady || !pickupCoords || !dropoffCoords) return;
+    if (!isMapsLoaded || !customerMapReady || !privateRideRouteOrigin || !dropoffCoords) return;
 
-    const fitKey = [currentRequestId || '', pickupCoords.lat, pickupCoords.lng, dropoffCoords.lat, dropoffCoords.lng].join(':');
+    const fitKey = [
+      currentRequestId || '',
+      isPrivateRideSearching ? 'searching' : 'assigned',
+      privateRideRouteOrigin.lat,
+      privateRideRouteOrigin.lng,
+      dropoffCoords.lat,
+      dropoffCoords.lng,
+    ].join(':');
     if (activePrivateRideMapFitRef.current === fitKey) return;
 
     const map = customerMapRef.current;
@@ -3877,45 +3893,46 @@ export default function CustomerHome() {
     if (!map || !maps?.LatLngBounds) return;
 
     const bounds = new maps.LatLngBounds();
-    bounds.extend(pickupCoords);
+    bounds.extend(privateRideRouteOrigin);
     bounds.extend(dropoffCoords);
-    if (haversineDistanceMeters(pickupCoords, dropoffCoords) < 100) {
-      map.panTo(pickupCoords);
+    if (haversineDistanceMeters(privateRideRouteOrigin, dropoffCoords) < 100) {
+      map.panTo(privateRideRouteOrigin);
       map.setZoom(15);
     } else {
       map.fitBounds(bounds, 72);
     }
     activePrivateRideMapFitRef.current = fitKey;
   }, [
-    isPrivateRideInProgress,
+    shouldShowPrivateRideRoute,
+    isPrivateRideSearching,
     isMapsLoaded,
     customerMapReady,
     currentRequestId,
-    pickupCoords,
+    privateRideRouteOrigin,
     dropoffCoords,
   ]);
 
-  // Private rides use the shortest available road route between the booked
-  // endpoints while avoiding highway travel. The same route preference is used
-  // by the rider map so both sides see the same trip.
+  // While finding a driver, preview the road route from this request's terminal
+  // to the destination. After assignment, show the customer's booked pickup to
+  // destination route instead.
   useEffect(() => {
     if (!isPrivateRideMap || isDeliveryRide) return;
-    if (!isPrivateRideInProgress) {
+    if (!shouldShowPrivateRideRoute) {
       setDestinationRoutePath(current => current.length ? [] : current);
       return;
     }
-    if (!pickupCoords || !dropoffCoords || !isMapsLoaded || !(window as any).google) {
+    if (!privateRideRouteOrigin || !dropoffCoords || !isMapsLoaded || !(window as any).google) {
       setDestinationRoutePath(current => current.length ? [] : current);
       return;
     }
-    if (haversineDistanceMeters(pickupCoords, dropoffCoords) <= 5) {
+    if (haversineDistanceMeters(privateRideRouteOrigin, dropoffCoords) <= 5) {
       setDestinationRoutePath(current => current.length ? [] : current);
       return;
     }
 
     let cancelled = false;
     setDestinationRoutePath([]);
-    void getShortestAvoidHighwaysRoadRoute(pickupCoords, dropoffCoords, GOOGLE_MAPS_API_KEY).then(path => {
+    void getShortestAvoidHighwaysRoadRoute(privateRideRouteOrigin, dropoffCoords, GOOGLE_MAPS_API_KEY).then(path => {
       if (!cancelled) setDestinationRoutePath(path);
     });
 
@@ -3925,9 +3942,9 @@ export default function CustomerHome() {
   }, [
     isPrivateRideMap,
     isDeliveryRide,
-    isPrivateRideInProgress,
-    pickupCoords?.lat,
-    pickupCoords?.lng,
+    shouldShowPrivateRideRoute,
+    privateRideRouteOrigin?.lat,
+    privateRideRouteOrigin?.lng,
     dropoffCoords?.lat,
     dropoffCoords?.lng,
     isMapsLoaded,

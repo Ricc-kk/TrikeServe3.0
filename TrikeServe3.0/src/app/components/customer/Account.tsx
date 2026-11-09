@@ -444,7 +444,6 @@ export default function Account() {
           accent="var(--primary)"
           onDone={() => {
             logout();
-            navigate("/");
           }}
         />
       )}

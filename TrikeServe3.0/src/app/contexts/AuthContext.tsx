@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef, ReactNode } fro
 import { supabase } from '../../utils/supabase';
 import { isDevModeEnabled, isDevModeFeatureEnabled, subscribeToDevModeChanges } from '../../lib/devMode';
 import { isSuperAdminEmail } from '../../lib/superAdminIdentity';
+import { rememberAuthReturnPath } from '../../lib/authReturnPath';
 
 export type UserRole = 'customer' | 'rider' | 'business' | 'admin';
 
@@ -1459,6 +1460,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    rememberAuthReturnPath(window.location.pathname, window.location.search, window.location.hash);
     const logoutGeneration = beginAuthTransition();
     signOutRequestedRef.current = true;
     signOutRequestedGenerationRef.current = logoutGeneration;

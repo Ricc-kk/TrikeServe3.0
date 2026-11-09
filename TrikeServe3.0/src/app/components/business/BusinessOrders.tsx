@@ -355,6 +355,9 @@ export default function BusinessOrders() {
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [etaToActiveStop, setEtaToActiveStop] = useState<string | null>(null);
   const trackingMapRef = useRef<any>(null);
+  const trackingMapWasManuallyMovedRef = useRef(false);
+  const trackingMapIsProgrammaticallyFittingRef = useRef(false);
+  const [trackingMapWasManuallyMoved, setTrackingMapWasManuallyMoved] = useState(false);
   const trackingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const trackingOrderIdRef = useRef<string | null>(null);
   // Refs so the realtime subscription can call the latest loadOrders without
@@ -406,6 +409,9 @@ export default function BusinessOrders() {
     setPackagePhotoFile(null);
     setPackagePhotoError(null);
     if (packagePhotoInputRef.current) packagePhotoInputRef.current.value = '';
+    trackingMapWasManuallyMovedRef.current = false;
+    trackingMapIsProgrammaticallyFittingRef.current = false;
+    setTrackingMapWasManuallyMoved(false);
   }, [selectedOrder?.id]);
 
   // Load orders from Supabase (secure - uses RLS policies)
@@ -603,17 +609,35 @@ export default function BusinessOrders() {
     return () => { active = false; };
   }, [driverLocation, activeTrackingDestination?.lat, activeTrackingDestination?.lng, isMapsLoaded, isDriverAtRestaurant, isRiderEnRouteToShop]);
 
-  // Keep both ends of the currently active route in view as the driver moves.
-  useEffect(() => {
-    const map = trackingMapRef.current;
+  const fitLiveTrackingMap = (map: any) => {
     const maps = (window as any).google?.maps;
-    if (!map || !maps?.LatLngBounds || !driverLocation || !activeTrackingDestination) return;
+    if (!map || !driverLocation) return;
 
-    const bounds = new maps.LatLngBounds();
-    bounds.extend(driverLocation);
-    bounds.extend(activeTrackingDestination);
-    routePath.forEach((point) => bounds.extend(point));
-    map.fitBounds(bounds, 28);
+    trackingMapIsProgrammaticallyFittingRef.current = true;
+    if (!maps?.LatLngBounds || !activeTrackingDestination) {
+      map.setCenter(driverLocation);
+    } else {
+      const bounds = new maps.LatLngBounds();
+      bounds.extend(driverLocation);
+      bounds.extend(activeTrackingDestination);
+      routePath.forEach((point) => bounds.extend(point));
+      map.fitBounds(bounds, 28);
+    }
+    window.setTimeout(() => {
+      trackingMapIsProgrammaticallyFittingRef.current = false;
+    }, 500);
+  };
+
+  const recenterLiveTrackingMap = () => {
+    trackingMapWasManuallyMovedRef.current = false;
+    setTrackingMapWasManuallyMoved(false);
+    fitLiveTrackingMap(trackingMapRef.current);
+  };
+
+  // Keep both ends of the active route in view until the business moves the map.
+  useEffect(() => {
+    if (trackingMapWasManuallyMovedRef.current) return;
+    fitLiveTrackingMap(trackingMapRef.current);
   }, [driverLocation, activeTrackingDestination?.lat, activeTrackingDestination?.lng, routePath]);
 
   const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
@@ -2115,22 +2139,26 @@ export default function BusinessOrders() {
                           </div>
                           <Navigation className="w-3.5 h-3.5 text-white/80" />
                         </div>
+                        <div className="relative">
                         <GoogleMap
                           mapContainerStyle={{ width: '100%', height: '200px' }}
                           defaultCenter={driverLocation}
                           defaultZoom={13}
-                          options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'none' }}
+                          options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, draggable: true, gestureHandling: 'greedy' }}
                           onLoad={(map) => {
                             trackingMapRef.current = map;
-                            const maps = (window as any).google?.maps;
-                            if (maps?.LatLngBounds && activeTrackingDestination) {
-                              const bounds = new maps.LatLngBounds();
-                              bounds.extend(driverLocation);
-                              bounds.extend(activeTrackingDestination);
-                              map.fitBounds(bounds, 28);
-                            }
+                            fitLiveTrackingMap(map);
                           }}
                           onUnmount={() => { trackingMapRef.current = null; }}
+                          onDragStart={() => {
+                            trackingMapWasManuallyMovedRef.current = true;
+                            setTrackingMapWasManuallyMoved(true);
+                          }}
+                          onZoomChanged={() => {
+                            if (trackingMapIsProgrammaticallyFittingRef.current) return;
+                            trackingMapWasManuallyMovedRef.current = true;
+                            setTrackingMapWasManuallyMoved(true);
+                          }}
                         >
                           <MapTypeToggle />
                           <MarkerF
@@ -2155,6 +2183,19 @@ export default function BusinessOrders() {
                             />
                           )}
                         </GoogleMap>
+                        {trackingMapWasManuallyMoved && (
+                          <button
+                            type="button"
+                            onClick={recenterLiveTrackingMap}
+                            aria-label="Recenter live delivery map"
+                            title="Recenter live delivery map"
+                            className="absolute bottom-3 right-3 z-[500] flex min-h-10 items-center gap-2 rounded-full border border-line bg-surface/95 px-3 text-xs font-semibold text-[var(--ink)] shadow-lg backdrop-blur-sm active:scale-95"
+                          >
+                            <Navigation className="size-4 text-[var(--primary)]" />
+                            Recenter
+                          </button>
+                        )}
+                        </div>
                         <div className="px-3 py-2 bg-surface border-t border-[var(--border)] flex items-center justify-between">
                           <span className="text-xs font-semibold text-[var(--ink)]">
                             {!activeTrackingDestination
