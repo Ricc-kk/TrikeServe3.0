@@ -921,6 +921,14 @@ export default function CustomerHome() {
    const routePreviewMapRef = useRef<any>(null);
   const activePrivateRideMapFitRef = useRef<string | null>(null);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
+  const activeRideTerminalId = activeRideLobby?.terminal_id || activeRideRequest?.terminal_id || selectedTerminalId;
+  const activeRideTerminalCenter = useMemo(() => {
+    const terminal = terminals.find(item => item.id === activeRideTerminalId);
+    if (!terminal) return null;
+    const lat = Number(terminal.center_lat);
+    const lng = Number(terminal.center_lng);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  }, [activeRideTerminalId, terminals]);
    const [selectedTerminalRouteId, setSelectedTerminalRouteId] = useState<string | null>(null);
    const terminalPickerUsageRef = useRef<Record<string, number>>({});
    const [terminalPickerUsage, setTerminalPickerUsage] = useState(() => {
@@ -3784,14 +3792,6 @@ export default function CustomerHome() {
     ?? (isActiveShareRideMap ? activeRideLobby?.terminal_id || selectedTerminalId : activeRideRequest?.terminal_id || selectedTerminalId)
     ?? nearestTerminal?.id
     ?? null;
-  const activeRideTerminalId = activeRideLobby?.terminal_id || activeRideRequest?.terminal_id || selectedTerminalId;
-  const activeRideTerminalCenter = useMemo(() => {
-    const terminal = terminals.find(item => item.id === activeRideTerminalId);
-    if (!terminal) return null;
-    const lat = Number(terminal.center_lat);
-    const lng = Number(terminal.center_lng);
-    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
-  }, [activeRideTerminalId, terminals]);
   const activeRideTerminalMarkerColor = normalizeTerminalColor(
     terminals.find(terminal => terminal.id === activeRideTerminalId)?.marker_color,
   );

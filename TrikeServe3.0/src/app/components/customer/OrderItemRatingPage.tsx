@@ -319,7 +319,7 @@ export default function OrderItemRatingPage() {
                           {!item.id && <p className="mt-1 text-xs text-[var(--error)]">This item cannot be rated.</p>}
                         </div>
                       </div>
-                      <div role="group" aria-label={`Rate ${item.name}`} className="mt-3 flex w-full justify-start gap-2">
+                      <div role="group" aria-label={`Rate ${item.name}`} className="mt-3 flex w-full justify-end gap-2">
                         {[1, 2, 3, 4, 5].map((star) => (
                           <button
                             key={star}
