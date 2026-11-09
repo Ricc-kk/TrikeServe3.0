@@ -648,7 +648,6 @@ export default function BusinessOrders() {
       && !['delivered', 'completed', 'cancelled'].includes(normalizedOrderStatus);
     if (
       !shouldTrackOrder ||
-      (isDriverAtRestaurant && isRiderEnRouteToShop) ||
       !activeTrackingDestination ||
       !isMapsLoaded ||
       !(window as any).google?.maps
@@ -702,7 +701,7 @@ export default function BusinessOrders() {
       cancelled = true;
       window.clearTimeout(routeTimer);
     };
-  }, [selectedOrder?.id, selectedOrder?.deliveryMode, selectedOrder?.status, selectedOrder?.driverId, selectedOrder?.driverName, activeTrackingDestination?.lat, activeTrackingDestination?.lng, isMapsLoaded, isDriverAtRestaurant, isRiderEnRouteToShop]);
+  }, [selectedOrder?.id, selectedOrder?.deliveryMode, selectedOrder?.status, selectedOrder?.driverId, selectedOrder?.driverName, activeTrackingDestination?.lat, activeTrackingDestination?.lng, isMapsLoaded, isRiderEnRouteToShop]);
 
   const fitLiveTrackingMap = (map: any) => {
     const maps = (window as any).google?.maps;

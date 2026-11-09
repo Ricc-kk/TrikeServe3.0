@@ -818,7 +818,6 @@ export default function OrderDetail() {
       && !['delivered', 'completed', 'cancelled'].includes(orderStatus);
     if (
       !shouldTrackOrder ||
-      (isDriverAtRestaurant && isRiderEnRouteToRestaurant) ||
       !activeTrackingDestination ||
       !isMapsLoaded ||
       !(window as any).google?.maps
@@ -871,7 +870,7 @@ export default function OrderDetail() {
       cancelled = true;
       window.clearTimeout(routeTimer);
     };
-  }, [order?.id, order?.deliveryMode, order?.status, order?.driverId, order?.driverName, activeTrackingDestination?.lat, activeTrackingDestination?.lng, isMapsLoaded, isDriverAtRestaurant, isRiderEnRouteToRestaurant]);
+  }, [order?.id, order?.deliveryMode, order?.status, order?.driverId, order?.driverName, activeTrackingDestination?.lat, activeTrackingDestination?.lng, isMapsLoaded, isRiderEnRouteToRestaurant]);
 
   const fitTrackingMapToRoute = (map: any) => {
     const maps = (window as any).google?.maps;
