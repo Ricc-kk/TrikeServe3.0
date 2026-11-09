@@ -880,16 +880,36 @@ export default function ShareRideLobby({
   };
 
   const normalizePassengers = (value: any): LobbyPassenger[] => {
-    if (Array.isArray(value)) return value;
+    let passengers: any[] = [];
+    if (Array.isArray(value)) {
+      passengers = value;
+    }
     if (typeof value === 'string') {
       try {
         const parsed = JSON.parse(value);
-        return Array.isArray(parsed) ? parsed : [];
+        passengers = Array.isArray(parsed) ? parsed : [];
       } catch {
         return [];
       }
     }
-    return [];
+    return passengers
+      .filter((passenger) => passenger && typeof passenger === 'object')
+      .map((passenger) => {
+        const dropoff = String(
+          passenger.dropoff || passenger.dropoff_location || passenger.dropoffAddress || passenger.dropoff_address || '',
+        ).trim();
+        const dropoffAddress = String(
+          passenger.dropoffAddress || passenger.dropoff_address || passenger.dropoff || passenger.dropoff_location || '',
+        ).trim();
+        return {
+          ...passenger,
+          dropoff,
+          dropoffAddress,
+          dropoffLat: passenger.dropoffLat ?? passenger.dropoff_lat ?? null,
+          dropoffLng: passenger.dropoffLng ?? passenger.dropoff_lng ?? null,
+          route_id: passenger.route_id ?? passenger.routeId ?? null,
+        } as LobbyPassenger;
+      });
   };
 
   const dedupePassengers = (passengers: LobbyPassenger[]) => {

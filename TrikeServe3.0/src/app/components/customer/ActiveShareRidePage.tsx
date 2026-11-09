@@ -44,10 +44,17 @@ function parsePassengers(value: unknown): any[] {
 }
 
 function mapPoint(latValue: unknown, lngValue: unknown): MapPoint {
-  if (latValue == null || lngValue == null) return null;
+  if (latValue == null || lngValue == null || latValue === '' || lngValue === '') return null;
   const lat = Number(latValue);
   const lng = Number(lngValue);
   return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+function firstText(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
 }
 
 export default function ActiveShareRidePage() {
@@ -130,15 +137,33 @@ export default function ActiveShareRidePage() {
       ? passengers.filter((passenger) => passenger?.id === user.id || String(passenger?.id || '').startsWith(`${user.id}_companion_`))
       : [];
     const ownPassenger = ownPassengers.find((passenger) => passenger.id === user?.id) || ownPassengers[0];
+    const ownsLobby = lobby?.customer_id === user?.id;
+    const ownDropoff = firstText(
+      ownPassenger?.dropoff,
+      ownPassenger?.dropoff_location,
+      ownPassenger?.dropoffAddress,
+      ownPassenger?.dropoff_address,
+      ownsLobby ? lobby?.dropoff_location : null,
+    );
+    const ownDropoffAddress = firstText(
+      ownPassenger?.dropoffAddress,
+      ownPassenger?.dropoff_address,
+      ownPassenger?.dropoff,
+      ownPassenger?.dropoff_location,
+      ownsLobby ? lobby?.dropoff_address : null,
+      ownDropoff,
+    );
 
     return {
       ownPassenger,
       passengerCount: ownPassengers.length || 1,
       pickupCoords: mapPoint(lobby?.pickup_lat, lobby?.pickup_lng),
       dropoffCoords: mapPoint(
-        ownPassenger?.dropoffLat ?? lobby?.dropoff_lat,
-        ownPassenger?.dropoffLng ?? lobby?.dropoff_lng,
+        ownPassenger?.dropoffLat ?? ownPassenger?.dropoff_lat ?? (ownsLobby ? lobby?.dropoff_lat : null),
+        ownPassenger?.dropoffLng ?? ownPassenger?.dropoff_lng ?? (ownsLobby ? lobby?.dropoff_lng : null),
       ),
+      ownDropoff,
+      ownDropoffAddress,
     };
   }, [lobby, user?.id]);
 
@@ -220,10 +245,10 @@ export default function ActiveShareRidePage() {
       presentation="page"
       pickup={booking?.pickup || lobby?.pickup_location || ''}
       pickupAddress={booking?.pickupAddress || lobby?.pickup_address || ''}
-      dropoff={booking?.dropoff || lobbyDetails.ownPassenger?.dropoff || lobby?.dropoff_location || ''}
-      dropoffAddress={booking?.dropoffAddress || lobbyDetails.ownPassenger?.dropoffAddress || lobby?.dropoff_address || ''}
+      dropoff={lobbyDetails.ownDropoff || booking?.dropoff || ''}
+      dropoffAddress={lobbyDetails.ownDropoffAddress || booking?.dropoffAddress || ''}
       pickupCoords={booking?.pickupCoords ?? lobbyDetails.pickupCoords}
-      dropoffCoords={booking?.dropoffCoords ?? lobbyDetails.dropoffCoords}
+      dropoffCoords={lobbyDetails.dropoffCoords ?? booking?.dropoffCoords}
       passengerCount={booking?.passengerCount ?? lobbyDetails.passengerCount}
       maxPassengersAllowed={booking?.maxPassengersAllowed ?? lobby?.max_seats}
       pricePerSeat={booking?.pricePerSeat ?? lobby?.price_per_seat}
