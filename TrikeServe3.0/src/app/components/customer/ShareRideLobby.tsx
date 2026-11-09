@@ -18,7 +18,7 @@ import { createTricycleMarkerIcon } from "@/lib/mapIcons";
 import FloatingChatHead from "../ui/FloatingChatHead";
 import BottomNav from "../ui/BottomNav";
 import RideChatOverlay from "../rider/RideChatOverlay";
-import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR } from "@/lib/rideMapColors";
+import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import { DEFAULT_TERMINAL_COLOR, normalizeRouteColor, normalizeTerminalColor, terminalMarkerIcon, TerminalIconGlyph } from "../ui/TerminalIcon";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { isWebsiteFeatureEnabled, useDevModeActiveFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
@@ -27,6 +27,7 @@ import { legacyRouteFromBoundary, normalizeTerminalRoutes } from "@/lib/terminal
 import { Tricycle } from "../ui/Tricycle";
 import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
 import { getProfileInitials } from "@/lib/profileInitials";
+import { getShortestAvoidHighwaysRoadRouteDetails } from "@/lib/roadRouting";
 
 const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
   cancelled: X,
@@ -308,14 +309,6 @@ function buildRouteThroughDropoff(
     visiblePath.push(destination.coords);
   }
   return visiblePath;
-}
-
-function formatEtaFromSeconds(seconds: number): string {
-  const totalMinutes = Math.max(1, Math.ceil(seconds / 60));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0) return `${totalMinutes} mins`;
-  return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} mins`;
 }
 
 /** Shows the current customer's initial when they do not have a profile photo. */
@@ -1385,6 +1378,9 @@ export default function ShareRideLobby({
   const driverRouteOriginKey = driverLocation
     ? `${Math.round(driverLocation.lat * 2000)}:${Math.round(driverLocation.lng * 2000)}`
     : '';
+  const normalizedLiveDriverStatus = String(lobby?.driver_status || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  const isDriverHeadingToPickup = ['on-the-way', 'arrived'].includes(normalizedLiveDriverStatus)
+    || (lobby?.status === 'driver_found' && !normalizedLiveDriverStatus);
 
   // Route the driver's live map line to the shared pickup, then directly to
   // this customer's own next drop-off. Other passengers are not route stops on
@@ -1397,12 +1393,9 @@ export default function ShareRideLobby({
       return;
     }
 
-    const driverStatus = String(lobby?.driver_status || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
-    const isHeadingToPickup = ['on-the-way', 'arrived'].includes(driverStatus)
-      || (lobby?.status === 'driver_found' && !driverStatus);
     let dest: { lat: number; lng: number } | null = null;
 
-    if (isHeadingToPickup) {
+    if (isDriverHeadingToPickup) {
       dest = pickupCoords || terminalCoords || null;
     } else {
       const passengers = normalizePassengers(lobby?.passengers_json);
@@ -1453,60 +1446,48 @@ export default function ShareRideLobby({
     }
 
     let active = true;
-    const DirectionsService = new (window as any).google.maps.DirectionsService();
-    DirectionsService.route({
-      origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
-      destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
-      travelMode: (window as any).google.maps.TravelMode.DRIVING,
-    }, (result: any, status: string) => {
-      if (!active) return;
-      if (status === 'OK' && result?.routes?.[0]) {
-        const route = result.routes[0];
-        let routePath: Array<{ lat: number; lng: number }> = route.overview_polyline?.points
-          ? decodePolyline(route.overview_polyline.points)
-          : [];
-        if (routePath.length < 2) {
-          const stepPaths = (route.legs || []).flatMap((leg: any) => leg.steps || []).map((step: any) => {
-            if (Array.isArray(step.path)) {
-              return step.path.map((point: any) => ({
-                lat: typeof point?.lat === 'function' ? point.lat() : Number(point?.lat),
-                lng: typeof point?.lng === 'function' ? point.lng() : Number(point?.lng),
-              })).filter((point: any) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-            }
-            return step.polyline?.points ? decodePolyline(step.polyline.points) : [];
-          });
-          routePath = stepPaths.reduce((path: Array<{ lat: number; lng: number }>, stepPath: Array<{ lat: number; lng: number }>) =>
-            stepPath.length ? [...path, ...(path.length ? stepPath.slice(1) : stepPath)] : path,
-          []);
-        }
-        if (routePath.length < 2 && Array.isArray(route.overview_path)) {
-          routePath = route.overview_path.map((point: any) => ({
-            lat: typeof point?.lat === 'function' ? point.lat() : Number(point?.lat),
-            lng: typeof point?.lng === 'function' ? point.lng() : Number(point?.lng),
-          })).filter((point: any) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-        }
-        setDriverRoutePath(routePath.length > 1 ? routePath : []);
+    let inFlight = false;
+    let hasRoute = false;
+    let routeTimer: number | undefined;
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-        const durationSeconds = (route.legs || []).reduce(
-          (total: number, leg: any) => total + Number(leg.duration?.value || 0),
-          0,
-        );
-        if (durationSeconds > 0) {
-          setEtaToDestination(formatEtaFromSeconds(durationSeconds));
-        } else {
-          const durationText = route.legs?.[route.legs.length - 1]?.duration?.text;
-          setEtaToDestination(durationText || null);
-        }
-      } else {
+    const calculateRoute = async () => {
+      if (!active || inFlight) return;
+      inFlight = true;
+      try {
+        // Use the same Routes API and Directions fallback as the driver's map
+        // so both screens draw the same road path for the active ride leg.
+        const route = await getShortestAvoidHighwaysRoadRouteDetails(driverLocation, dest!, apiKey);
+        if (!active) return;
+        const path = route.path.length > 1 ? route.path : [];
+        setDriverRoutePath(path);
+        setEtaToDestination(route.durationText || null);
+        hasRoute = path.length > 1;
+      } catch (error) {
+        if (!active) return;
+        console.warn('[ShareRideLobby] Could not load the live driver route:', error);
         setDriverRoutePath([]);
         setEtaToDestination(null);
+        hasRoute = false;
+      } finally {
+        inFlight = false;
+        if (active) {
+          // Retry failed/unavailable routes quickly; refresh a found road path
+          // periodically between the driver's GPS updates.
+          routeTimer = window.setTimeout(() => { void calculateRoute(); }, hasRoute ? 12000 : 1500);
+        }
       }
-    });
-    return () => { active = false; };
+    };
+
+    void calculateRoute();
+    return () => {
+      active = false;
+      window.clearTimeout(routeTimer);
+    };
   }, [
     driverRouteOriginKey,
     isMapsLoaded,
-    lobby?.driver_status,
+    isDriverHeadingToPickup,
     lobby?.status,
     lobby?.passengers_json,
     pickupCoords,
@@ -2934,7 +2915,7 @@ if (loading) {
                     <Polyline
                       path={driverRoutePath}
                       options={{
-                        strokeColor: RIDE_MAP_DRIVER_COLOR,
+                        strokeColor: isDriverHeadingToPickup ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DRIVER_COLOR,
                         strokeOpacity: 0.96,
                         strokeWeight: 6,
                         geodesic: true,
@@ -3079,7 +3060,7 @@ if (loading) {
                   <Polyline
                     path={driverRoutePath}
                     options={{
-                      strokeColor: RIDE_MAP_DRIVER_COLOR,
+                      strokeColor: isDriverHeadingToPickup ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DRIVER_COLOR,
                       strokeOpacity: 0.96,
                       strokeWeight: 6,
                       geodesic: true,
