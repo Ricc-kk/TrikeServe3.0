@@ -524,6 +524,9 @@ export default function ShareRideLobby({
   const [terminalMarkerPosition, setTerminalMarkerPosition] = useState(terminalCoords || null);
   const lobbyMapRef = useRef<any>(null);
   const lobbyMapWasManuallyMovedRef = useRef(false);
+  const lobbyMapIsProgrammaticallyFittingRef = useRef(false);
+  const lobbyMapFittedRideKeyRef = useRef<string | null>(null);
+  const driverRouteDestinationKeyRef = useRef<string | null>(null);
   const lobbyMapInitialCenterRef = useRef(
     terminalCoords || pickupCoords || routePoints?.[0] || { lat: 14.5995, lng: 120.9842 },
   );
@@ -1000,7 +1003,16 @@ export default function ShareRideLobby({
   }, [lobby?.terminal_id, lobby?.passengers_json, selectedTerminalId, terminalCoords, routePoints, dropoffCoords, user?.id]);
 
   const fitLobbyRouteBounds = useCallback(() => {
+    const hasAssignedDriver = ['driver_found', 'in_progress'].includes(String(lobby?.status || ''));
+    const liveRideFitKey = hasAssignedDriver
+      ? `${lobby?.id || ''}:${lobby?.driver_id || ''}:${lobby?.status || ''}`
+      : null;
+    if (!hasAssignedDriver) lobbyMapFittedRideKeyRef.current = null;
     if (lobbyMapWasManuallyMovedRef.current) return;
+    if (liveRideFitKey && lobbyMapFittedRideKeyRef.current === liveRideFitKey) return;
+    // Wait for the driver's first location before fitting the active map so
+    // the driver's approach route is inside the initial viewport.
+    if (liveRideFitKey && !driverLocation) return;
 
     const map = lobbyMapRef.current;
     const maps = (window as any).google?.maps;
@@ -1025,13 +1037,23 @@ export default function ShareRideLobby({
     const endpoints = [pickupCoords, dropoffCoords, ...passengerDropoffs].filter(
       (point): point is { lat: number; lng: number } => point !== null && point !== undefined,
     );
-    const points = [...visibleRoutePath, ...endpoints];
+    const points = [
+      ...visibleRoutePath,
+      ...driverRoutePath,
+      ...endpoints,
+      ...(driverLocation ? [driverLocation] : []),
+    ];
     if (points.length === 0) return;
     const bounds = new maps.LatLngBounds();
     points.forEach((point) => bounds.extend(point));
-    const assignedPage = presentation === 'page' && ['driver_found', 'in_progress'].includes(String(lobby?.status || ''));
+    const assignedPage = presentation === 'page' && hasAssignedDriver;
+    lobbyMapIsProgrammaticallyFittingRef.current = true;
     map.fitBounds(bounds, assignedPage ? { top: 88, right: 24, bottom: 340, left: 24 } : 24);
-  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.passengers_json, lobby?.status, user?.id, presentation]);
+    window.setTimeout(() => {
+      lobbyMapIsProgrammaticallyFittingRef.current = false;
+    }, 500);
+    if (liveRideFitKey) lobbyMapFittedRideKeyRef.current = liveRideFitKey;
+  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.id, lobby?.driver_id, lobby?.passengers_json, lobby?.status, user?.id, presentation, driverLocation, driverRoutePath]);
 
   useEffect(() => {
     fitLobbyRouteBounds();
@@ -1306,7 +1328,9 @@ export default function ShareRideLobby({
         if (freshLobby?.driver_lat != null && freshLobby?.driver_lng != null) {
           const loc = { lat: Number(freshLobby.driver_lat), lng: Number(freshLobby.driver_lng) };
           if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) return;
-          setDriverLocation(loc);
+          setDriverLocation(previous =>
+            previous && previous.lat === loc.lat && previous.lng === loc.lng ? previous : loc,
+          );
         }
       } catch (err) {
         console.error('Error polling driver location:', err);
@@ -1356,6 +1380,10 @@ export default function ShareRideLobby({
     setPaymentModalPassengerId(pendingPassenger?.id || null);
   }, [lobby?.id, lobby?.status, lobby?.passengers_json, user?.id, terminalStatus, paymentModalPassengerId]);
 
+  const driverRouteOriginKey = driverLocation
+    ? `${Math.round(driverLocation.lat * 2000)}:${Math.round(driverLocation.lng * 2000)}`
+    : '';
+
   // Route the driver's live map line to the shared pickup, then directly to
   // this customer's own next drop-off. Other passengers are not route stops on
   // this customer's map.
@@ -1363,16 +1391,17 @@ export default function ShareRideLobby({
     if (!driverLocation || !isMapsLoaded || !(window as any).google) {
       setDriverRoutePath([]);
       setEtaToDestination(null);
+      driverRouteDestinationKeyRef.current = null;
       return;
     }
 
-    const isHeadingToPickup = lobby?.driver_status === 'on-the-way'
-      || lobby?.driver_status === 'arrived'
-      || (lobby?.status === 'driver_found' && !lobby?.driver_status);
+    const driverStatus = String(lobby?.driver_status || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+    const isHeadingToPickup = ['on-the-way', 'arrived'].includes(driverStatus)
+      || (lobby?.status === 'driver_found' && !driverStatus);
     let dest: { lat: number; lng: number } | null = null;
 
-    if (isHeadingToPickup && pickupCoords) {
-      dest = pickupCoords;
+    if (isHeadingToPickup) {
+      dest = pickupCoords || terminalCoords || null;
     } else {
       const passengers = normalizePassengers(lobby?.passengers_json);
       const ownPassengers = passengers.filter(passenger => Boolean(
@@ -1391,12 +1420,14 @@ export default function ShareRideLobby({
       if (ownPassengers.length > 0 && pendingOwnPassengers.length === 0) {
         setDriverRoutePath([]);
         setEtaToDestination('Arrived');
+        driverRouteDestinationKeyRef.current = null;
         return;
       }
       const targetDropoffStatus = String(targetPassenger?.dropoff_status || targetPassenger?.dropoffStatus || '').toLowerCase();
       if (targetPassenger && ['dropped-off', 'completed'].includes(targetDropoffStatus)) {
         setDriverRoutePath([]);
         setEtaToDestination('Arrived');
+        driverRouteDestinationKeyRef.current = null;
         return;
       }
       const targetLat = targetPassenger?.dropoffLat == null ? Number.NaN : Number(targetPassenger.dropoffLat);
@@ -1409,7 +1440,14 @@ export default function ShareRideLobby({
     if (!dest) {
       setDriverRoutePath([]);
       setEtaToDestination(null);
+      driverRouteDestinationKeyRef.current = null;
       return;
+    }
+
+    const destinationKey = `${dest.lat.toFixed(5)}:${dest.lng.toFixed(5)}`;
+    if (driverRouteDestinationKeyRef.current !== destinationKey) {
+      setDriverRoutePath([]);
+      driverRouteDestinationKeyRef.current = destinationKey;
     }
 
     let active = true;
@@ -1422,10 +1460,30 @@ export default function ShareRideLobby({
       if (!active) return;
       if (status === 'OK' && result?.routes?.[0]) {
         const route = result.routes[0];
-        const routePath = route.overview_polyline?.points
+        let routePath: Array<{ lat: number; lng: number }> = route.overview_polyline?.points
           ? decodePolyline(route.overview_polyline.points)
-          : route.overview_path?.map((point: any) => ({ lat: point.lat(), lng: point.lng() })) || [];
-        if (routePath.length > 0) setDriverRoutePath(routePath);
+          : [];
+        if (routePath.length < 2) {
+          const stepPaths = (route.legs || []).flatMap((leg: any) => leg.steps || []).map((step: any) => {
+            if (Array.isArray(step.path)) {
+              return step.path.map((point: any) => ({
+                lat: typeof point?.lat === 'function' ? point.lat() : Number(point?.lat),
+                lng: typeof point?.lng === 'function' ? point.lng() : Number(point?.lng),
+              })).filter((point: any) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+            }
+            return step.polyline?.points ? decodePolyline(step.polyline.points) : [];
+          });
+          routePath = stepPaths.reduce((path: Array<{ lat: number; lng: number }>, stepPath: Array<{ lat: number; lng: number }>) =>
+            stepPath.length ? [...path, ...(path.length ? stepPath.slice(1) : stepPath)] : path,
+          []);
+        }
+        if (routePath.length < 2 && Array.isArray(route.overview_path)) {
+          routePath = route.overview_path.map((point: any) => ({
+            lat: typeof point?.lat === 'function' ? point.lat() : Number(point?.lat),
+            lng: typeof point?.lng === 'function' ? point.lng() : Number(point?.lng),
+          })).filter((point: any) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+        }
+        setDriverRoutePath(routePath.length > 1 ? routePath : []);
 
         const durationSeconds = (route.legs || []).reduce(
           (total: number, leg: any) => total + Number(leg.duration?.value || 0),
@@ -1444,12 +1502,13 @@ export default function ShareRideLobby({
     });
     return () => { active = false; };
   }, [
-    driverLocation,
+    driverRouteOriginKey,
     isMapsLoaded,
     lobby?.driver_status,
     lobby?.status,
     lobby?.passengers_json,
     pickupCoords,
+    terminalCoords,
     dropoffCoords,
     user?.id,
   ]);
@@ -2856,18 +2915,6 @@ if (loading) {
                       options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.95, strokeWeight: 4, geodesic: true, clickable: false }}
                     />
                   )}
-                  {/* Driver route line */}
-                  {driverRoutePath.length > 0 && (
-                    <Polyline
-                      path={driverRoutePath}
-                      options={{
-                        strokeColor: RIDE_MAP_DRIVER_COLOR,
-                        strokeOpacity: 0.9,
-                        strokeWeight: 4,
-                        geodesic: true,
-                      }}
-                    />
-                  )}
                   {/* Destination route line (pickup to dropoff) */}
                   {destinationRoutePath.length > 0 && (
                     <Polyline
@@ -2877,6 +2924,19 @@ if (loading) {
                         strokeOpacity: 0.9,
                         strokeWeight: 5,
                         geodesic: true,
+                      }}
+                    />
+                  )}
+                  {/* Keep the live driver leg above the shared destination route. */}
+                  {driverRoutePath.length > 0 && (
+                    <Polyline
+                      path={driverRoutePath}
+                      options={{
+                        strokeColor: RIDE_MAP_DRIVER_COLOR,
+                        strokeOpacity: 0.96,
+                        strokeWeight: 6,
+                        geodesic: true,
+                        zIndex: 1000,
                       }}
                     />
                   )}
@@ -2960,7 +3020,11 @@ if (loading) {
                 }}
                 onUnmount={() => { lobbyMapRef.current = null; }}
                 onDragStart={() => { lobbyMapWasManuallyMovedRef.current = true; }}
-                onZoomChanged={() => { lobbyMapWasManuallyMovedRef.current = true; }}
+                onZoomChanged={() => {
+                  if (!lobbyMapIsProgrammaticallyFittingRef.current) {
+                    lobbyMapWasManuallyMovedRef.current = true;
+                  }
+                }}
                 options={{
                   zoomControl: false,
                   fullscreenControl: false,
@@ -3003,21 +3067,22 @@ if (loading) {
                     options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.95, strokeWeight: 4, geodesic: true, clickable: false }}
                   />
                 )}
+                {destinationRoutePath.length > 0 && (
+                  <Polyline
+                    path={destinationRoutePath}
+                    options={{ strokeColor: RIDE_MAP_DROPOFF_COLOR, strokeOpacity: 0.9, strokeWeight: 5, geodesic: true }}
+                  />
+                )}
                 {driverRoutePath.length > 0 && (
                   <Polyline
                     path={driverRoutePath}
                     options={{
                       strokeColor: RIDE_MAP_DRIVER_COLOR,
-                      strokeOpacity: 0.9,
-                      strokeWeight: 4,
+                      strokeOpacity: 0.96,
+                      strokeWeight: 6,
                       geodesic: true,
+                      zIndex: 1000,
                     }}
-                  />
-                )}
-                {destinationRoutePath.length > 0 && (
-                  <Polyline
-                    path={destinationRoutePath}
-                    options={{ strokeColor: RIDE_MAP_DROPOFF_COLOR, strokeOpacity: 0.9, strokeWeight: 5, geodesic: true }}
                   />
                 )}
               </GoogleMap>
