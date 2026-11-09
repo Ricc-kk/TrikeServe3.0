@@ -4691,12 +4691,7 @@ const getPrice = () => {
       {rideBlocked && resumableShareLobbyId && !(rideStateBelongsToCurrentUser && showShareLobby) && !visibleActiveRide && visibleRideStatus !== 'searching' && bookingStep === 'home' && (
         <button
           type="button"
-          onClick={() => {
-            setActiveShareLobbyId(resumableShareLobbyId);
-            setShareLobbyInitialId(resumableShareLobbyId);
-            setBookingStep('home');
-            setShowShareLobby(true);
-          }}
+          onClick={() => navigate('/customer/active-share-ride', { state: { lobbyId: resumableShareLobbyId } })}
           aria-label="Open your active Share Ride"
           title="Share Ride"
           className="fixed bottom-24 right-4 z-[2000] shadow-2xl transition-transform hover:scale-110"
@@ -6322,9 +6317,20 @@ const getPrice = () => {
       {rideStateBelongsToCurrentUser && visibleRideStatus === 'searching' && isSearchMinimized && (
         <button
           type="button"
-          onClick={() => setIsSearchMinimized(false)}
-          aria-label={`Reopen driver search. Elapsed ${searchingTime}`}
-          title="Reopen driver search"
+          onClick={() => {
+            const lobbyId = activeRideLobby?.id || (isActiveShareRideMap ? activeShareLobbyId : null);
+            if (lobbyId) {
+              navigate('/customer/active-share-ride', { state: { lobbyId } });
+              return;
+            }
+            navigate('/customer/active-private-ride');
+          }}
+          aria-label={activeRideLobby?.id || (isActiveShareRideMap && activeShareLobbyId)
+            ? 'Open your active Share Ride'
+            : `Open your active Private Ride. Elapsed ${searchingTime}`}
+          title={activeRideLobby?.id || (isActiveShareRideMap && activeShareLobbyId)
+            ? 'Share Ride'
+            : 'Private Ride'}
           className="fixed right-4 z-[2000] flex h-16 w-16 items-center justify-center rounded-full bg-[var(--primary)] shadow-2xl transition-all hover:scale-110 hover:bg-[var(--primary)]"
           style={{ bottom: 'calc(6rem + env(safe-area-inset-bottom))' }}
         >

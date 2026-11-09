@@ -5,6 +5,7 @@ import { Card } from "../ui/card";
 import { ActiveRideDriverCard, RideModal, RideStatusModal, RideSurfaceCard } from "../ui/RideUI";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
+import { useLocation, useNavigate } from "react-router";
 import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointOnRoadCorridor, haversineDistanceMeters, normalizeRoadWidth } from "@/lib/supabase";
 import { createDropoffMarkerIcon } from "@/lib/mapIcons";
 import { MarkerF, Polyline } from "@react-google-maps/api";
@@ -456,6 +457,8 @@ export default function ShareRideLobby({
   onClose
 }: ShareRideLobbyProps) {
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const lobbySeatLimit = Number.isFinite(maxPassengersAllowed) && maxPassengersAllowed >= 1
     ? Math.floor(maxPassengersAllowed)
     : DEFAULT_MAX_PASSENGERS;
@@ -1102,12 +1105,12 @@ export default function ShareRideLobby({
       : terminalRoutePath;
     const shouldShowLiveDriverRoute = !assignedPage || isDriverHeadingToPickup || visibleRoutePath.length === 0;
     const activeDriverRoutePath = assignedPage
-      ? (isDriverHeadingToPickup ? driverToTerminalRoutePath : [])
+      ? driverToTerminalRoutePath
       : shouldShowLiveDriverRoute ? driverRoutePath : [];
     const routeSignature = terminalRoutePath.length > 0
       ? `${terminalRoutePath.length}:${terminalRoutePath[0].lat}:${terminalRoutePath[0].lng}:${terminalRoutePath[terminalRoutePath.length - 1].lat}:${terminalRoutePath[terminalRoutePath.length - 1].lng}`
       : 'empty';
-    const liveRouteSignature = `${assignedPage ? (isDriverHeadingToPickup ? 'driver-to-terminal' : 'terminal-to-dropoff') : isDriverHeadingToPickup ? 'pickup' : 'dropoff'}:${activeDriverRoutePath.length > 1 ? 'live' : 'planned'}`;
+    const liveRouteSignature = `${assignedPage ? 'driver-to-terminal' : isDriverHeadingToPickup ? 'pickup' : 'dropoff'}:${activeDriverRoutePath.length > 1 ? 'live' : 'planned'}`;
     const liveRideFitKey = hasAssignedDriver
       ? `${lobby?.id || ''}:${lobby?.driver_id || ''}:${lobby?.status || ''}:${routeSignature}:${liveRouteSignature}:${routeAnchor?.lat ?? ''}:${routeAnchor?.lng ?? ''}`
       : null;
@@ -1601,13 +1604,14 @@ export default function ShareRideLobby({
     user?.id,
   ]);
 
-  // Before pickup, connect the driver's live location to the terminal. After
-  // pickup, the map uses the saved terminal route through this customer's stop.
+  // Connect the driver's live location to the terminal with a road route. The
+  // selected terminal road then continues from the terminal to this customer's
+  // drop-off, keeping both route legs visible together.
   useEffect(() => {
     const isAssignedRidePage = presentation === 'page'
       && ['driver_found', 'in_progress'].includes(String(lobby?.status || ''));
     const destination = terminalMarkerPosition || terminalCoords || pickupCoords;
-    if (!isAssignedRidePage || !isDriverHeadingToPickup || !driverLocation || !destination || !isMapsLoaded || !(window as any).google) {
+    if (!isAssignedRidePage || !driverLocation || !destination || !isMapsLoaded || !(window as any).google) {
       setDriverToTerminalRoutePath([]);
       driverToTerminalDestinationKeyRef.current = null;
       return;
@@ -1661,7 +1665,6 @@ export default function ShareRideLobby({
     isMapsLoaded,
     lobby?.status,
     presentation,
-    isDriverHeadingToPickup,
     terminalMarkerPosition,
     terminalCoords,
     pickupCoords,
@@ -2646,13 +2649,29 @@ if (loading) {
 
   // Minimized floating icon
   if (isMinimized && !ownRideCompleted) {
+    const reopenLobby = () => {
+      if (user?.id) {
+        try {
+          localStorage.setItem(customerActiveShareLobbyStorageKey(user.id), lobby.id);
+        } catch {
+          // The route state below still identifies the active lobby.
+        }
+      }
+      if (location.pathname === '/customer/active-share-ride') {
+        setIsMinimized(false);
+        return;
+      }
+      navigate('/customer/active-share-ride', { state: { lobbyId: lobby.id } });
+    };
+
     return (
       <>
         {chatLayer}
         {paymentModal}
         {driverAssignedModal}
         <button
-        onClick={() => setIsMinimized(false)}
+        onClick={reopenLobby}
+        aria-label="Open your active Share Ride"
         className="fixed bottom-24 right-4 z-[2000] shadow-2xl"
       >
         <div className="relative">
@@ -3227,7 +3246,7 @@ if (loading) {
                     options={{ strokeColor: RIDE_MAP_DROPOFF_COLOR, strokeOpacity: 0.9, strokeWeight: 5, geodesic: true }}
                   />
                 )}
-                {isDriverHeadingToPickup && driverToTerminalRoutePath.length > 0 && (
+                {driverToTerminalRoutePath.length > 0 && (
                   <Polyline
                     path={driverToTerminalRoutePath}
                     options={{
