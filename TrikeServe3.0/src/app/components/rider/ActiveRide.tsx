@@ -3174,31 +3174,6 @@ export default function ActiveRide() {
               />
             )}
 
-            {/* Straight-line fallback. If both road-routing APIs fail while the
-                destination coordinates are known, keep a visible line toward
-                the active destination until a road route can be loaded. */}
-            {!directions && !routePath && driverLocation && (!isSharedRide || isHeadingToPickup) && (!isPrivateRide || isHeadingToPickup) && (() => {
-              const dest = isHeadingToPickup
-                ? (rideData.pickupLat != null && rideData.pickupLng != null
-                    ? { lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }
-                    : null)
-                : (rideData.dropoffLat != null && rideData.dropoffLng != null
-                    ? { lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }
-                    : null);
-              if (!dest) return null;
-              return (
-                <Polyline
-                  path={[{ lat: driverLocation.lat, lng: driverLocation.lng }, dest]}
-                  options={{
-                    strokeColor: isHeadingToPickup ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
-                    strokeOpacity: 0.75,
-                    strokeWeight: 4,
-                    geodesic: true,
-                  }}
-                />
-              );
-            })()}
-
           </GoogleMap>
         ) : (
           <div className="h-full flex flex-col items-center justify-center bg-[var(--muted)] space-y-4 p-6">

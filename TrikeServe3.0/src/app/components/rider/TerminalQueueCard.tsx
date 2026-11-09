@@ -583,15 +583,15 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
               <Ticket className="w-5 h-5 text-[var(--muted-foreground)]" />
             </div>
             <p className="text-sm font-extrabold text-[var(--ink)]">You're not in the queue</p>
-            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-              {queueJoiningEnabled
-                ? foodDeliveryEnabled
-                  ? "Get assigned to a TODA terminal to accept private and share rides. Delivery requests remain open."
-                  : "Get assigned to a TODA terminal to accept private and share rides. Food delivery requests are currently unavailable on the website."
-                : foodDeliveryEnabled
-                  ? "Queue joining is currently unavailable on the website. Delivery requests remain open."
-                  : "Queue joining and food delivery requests are currently unavailable on the website."}
-            </p>
+            {!(queueJoiningEnabled && foodDeliveryEnabled) && (
+              <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                {queueJoiningEnabled
+                  ? "Get assigned to a TODA terminal to accept private and share rides. Food delivery requests are currently unavailable on the website."
+                  : foodDeliveryEnabled
+                    ? "Queue joining is currently unavailable on the website. Delivery requests remain open."
+                    : "Queue joining and food delivery requests are currently unavailable on the website."}
+              </p>
+            )}
           </div>
           <div className="flex justify-center mb-3">
             <AccessChips isFirst={false} />
