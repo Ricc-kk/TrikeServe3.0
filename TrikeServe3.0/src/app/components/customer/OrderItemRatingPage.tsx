@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, CheckCircle2, Star } from "lucide-react";
+import { ArrowLeft, CheckCircle2, LoaderCircle, LockKeyhole, Star } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 
 import { useAuth } from "../../contexts/AuthContext";
@@ -8,6 +8,7 @@ import { supabase } from "../../../lib/supabase";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
+import OrderItemRatingCard from "./OrderItemRatingCard";
 
 interface OrderedItem {
   index: number;
@@ -210,10 +211,14 @@ export default function OrderItemRatingPage() {
     return () => { active = false; };
   }, [orderId, user?.id, user?.email, authLoading]);
 
-  const hasChanges = Boolean(order && order.items.some((item) => {
+  const rateableItems = order?.items.filter((item) => item.id) ?? [];
+  const selectedItemCount = rateableItems.filter((item) => ratings[item.index] > 0).length;
+  const allRatingsSaved = rateableItems.length > 0 && rateableItems.every((item) => savedRatings[item.index] > 0);
+  const pendingRatingCount = rateableItems.filter((item) => {
     const rating = Number(ratings[item.index]);
-    return item.id && Number.isInteger(rating) && rating >= 1 && rating <= 5 && savedRatings[item.index] !== rating;
-  }));
+    return Number.isInteger(rating) && rating >= 1 && rating <= 5 && savedRatings[item.index] !== rating;
+  }).length;
+  const hasChanges = pendingRatingCount > 0;
 
   const submitRatings = async () => {
     if (!order || !user?.id || !order.restaurantId || submitting || ratingLoadError) return;
@@ -274,7 +279,7 @@ export default function OrderItemRatingPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-2xl space-y-4 px-4 py-5">
+      <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-5 sm:py-6">
         {loading ? (
           <Card className="p-6 text-center text-sm text-[var(--muted-foreground)]">Loading ordered items…</Card>
         ) : pageError ? (
@@ -286,11 +291,28 @@ export default function OrderItemRatingPage() {
           </Card>
         ) : order ? (
           <>
-            <div>
+            <section aria-labelledby="item-rating-heading">
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">{order.restaurantName}</p>
-              <h2 className="mt-1 text-xl font-bold text-[var(--ink)]">How was each item?</h2>
-              <p className="mt-1 text-sm text-[var(--muted-foreground)]">Your ratings help other customers choose what to order.</p>
-            </div>
+              <h2 id="item-rating-heading" className="mt-1 text-xl font-bold text-[var(--ink)]">How was each item?</h2>
+              <p className="mt-1 text-sm leading-relaxed text-[var(--muted-foreground)]">Your ratings help others choose what to order.</p>
+              {rateableItems.length > 0 && (
+                <div className="mt-4 flex items-center gap-3">
+                  <span className="shrink-0 text-xs font-semibold text-[var(--muted-foreground)]">
+                    {allRatingsSaved ? "All ratings saved" : `${selectedItemCount} of ${rateableItems.length} rated`}
+                  </span>
+                  <div
+                    role="progressbar"
+                    aria-label="Items with a rating selected"
+                    aria-valuemin={0}
+                    aria-valuemax={rateableItems.length}
+                    aria-valuenow={selectedItemCount}
+                    className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--border)]"
+                  >
+                    <div className="h-full rounded-full bg-[var(--teal)] transition-[width] duration-200" style={{ width: `${selectedItemCount / rateableItems.length * 100}%` }} />
+                  </div>
+                </div>
+              )}
+            </section>
 
             {order.items.length === 0 ? (
               <Card className="p-5 text-center text-sm text-[var(--muted-foreground)]">This order has no items to rate.</Card>
@@ -300,44 +322,18 @@ export default function OrderItemRatingPage() {
                   const selectedRating = ratings[item.index] || 0;
                   const isSaved = selectedRating > 0 && savedRatings[item.index] === selectedRating;
                   return (
-                    <Card key={`${item.id || item.name}-${item.index}`} className="items-start p-3 text-left">
-                      <div className="flex w-full items-start justify-start gap-3 text-left">
-                        {item.image ? (
-                          <ImageWithFallback
-                            src={item.image}
-                            alt={item.name}
-                            className="size-16 shrink-0 rounded-xl object-cover"
-                          />
-                        ) : (
-                          <div aria-hidden="true" className="size-16 shrink-0 rounded-xl bg-[var(--muted)]" />
-                        )}
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-[var(--ink)]">{item.name}</p>
-                          <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
-                            Qty: {item.quantity} · {isSaved ? "Rating saved" : selectedRating ? "Ready to save" : "Not rated"}
-                          </p>
-                          {!item.id && <p className="mt-1 text-xs text-[var(--error)]">This item cannot be rated.</p>}
-                        </div>
-                      </div>
-                      <div role="group" aria-label={`Rate ${item.name}`} className="mt-3 flex w-full justify-end gap-2">
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <button
-                            key={star}
-                            type="button"
-                            aria-label={`Rate ${item.name} ${star} out of 5`}
-                            aria-pressed={star === selectedRating}
-                            disabled={!item.id || submitting || isSaved || Boolean(ratingLoadError)}
-                            onClick={() => {
-                              setRatings((current) => ({ ...current, [item.index]: star }));
-                              setSaved(false);
-                            }}
-                            className={`rounded-lg p-1.5 ${isSaved ? "cursor-not-allowed" : "transition-transform hover:scale-110 disabled:opacity-40"}`}
-                          >
-                            <Star className={`size-6 ${star <= selectedRating ? "fill-[var(--amber)] text-[var(--amber)]" : "fill-[var(--border)] text-[var(--border)]"}`} aria-hidden="true" />
-                          </button>
-                        ))}
-                      </div>
-                    </Card>
+                    <OrderItemRatingCard
+                      key={`${item.id || item.name}-${item.index}`}
+                      item={item}
+                      value={selectedRating}
+                      saved={isSaved}
+                      disabled={submitting || Boolean(ratingLoadError)}
+                      onChange={(rating) => {
+                        setRatings((current) => ({ ...current, [item.index]: rating }));
+                        setSaved(false);
+                        setSaveError(null);
+                      }}
+                    />
                   );
                 })}
               </div>
@@ -348,18 +344,27 @@ export default function OrderItemRatingPage() {
             {saveError && <p role="alert" className="text-sm text-[var(--error)]">{saveError}</p>}
             {saved && <p role="status" className="flex items-center gap-2 text-sm font-semibold text-[var(--success-ink)]"><CheckCircle2 className="size-4" aria-hidden="true" />Item ratings saved.</p>}
 
-            <div className="space-y-2 pt-1">
+            <div className="space-y-3 pt-1">
+              {!allRatingsSaved && (
+                <p className="flex items-center justify-center gap-1.5 text-xs text-[var(--muted-foreground)]">
+                  <LockKeyhole className="size-3.5 shrink-0" aria-hidden="true" />
+                  Ratings cannot be changed once saved.
+                </p>
+              )}
               <Button
                 type="button"
-                onClick={() => void submitRatings()}
-                disabled={!hasChanges || !order.restaurantId || submitting || Boolean(ratingLoadError)}
-                className="w-full bg-[var(--primary)] py-3 font-bold text-white hover:bg-[var(--primary)] disabled:opacity-50"
+                onClick={allRatingsSaved ? goBack : () => void submitRatings()}
+                disabled={!allRatingsSaved && (!hasChanges || !order.restaurantId || submitting || Boolean(ratingLoadError))}
+                className="h-12 w-full rounded-xl bg-[var(--primary)] font-bold text-[var(--primary-foreground)] hover:brightness-95 disabled:bg-[var(--border)] disabled:text-[var(--muted-foreground)] disabled:opacity-100"
               >
-                {submitting ? "Saving ratings…" : "Save ratings"}
+                {submitting && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
+                {allRatingsSaved ? "Back to order details" : submitting ? "Saving ratings..." : pendingRatingCount > 0 ? `Save ${pendingRatingCount} ${pendingRatingCount === 1 ? "rating" : "ratings"}` : "Save ratings"}
               </Button>
-              <button type="button" onClick={goBack} className="min-h-11 w-full rounded-xl text-sm font-semibold text-[var(--muted-foreground)] hover:bg-[var(--border)]">
-                Back to order details
-              </button>
+              {!allRatingsSaved && (
+                <button type="button" onClick={goBack} className="min-h-11 w-full rounded-xl text-sm font-semibold text-[var(--muted-foreground)] hover:bg-[var(--border)]">
+                  Back to order details
+                </button>
+              )}
             </div>
           </>
         ) : null}
