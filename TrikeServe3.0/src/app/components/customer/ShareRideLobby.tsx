@@ -365,6 +365,8 @@ interface ShareRideLobby {
   driver_name?: string;
   driver_plate?: string;
   driver_rating?: string;
+  driver_lat?: number | string | null;
+  driver_lng?: number | string | null;
   driver_status?: string;
   driver_status_message?: string;
   created_at: string;

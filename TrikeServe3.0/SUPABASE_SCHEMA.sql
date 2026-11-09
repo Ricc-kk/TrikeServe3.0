@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS shared_ride_lobbies (
   driver_name VARCHAR(255),
   driver_plate VARCHAR(50),
   driver_rating VARCHAR(10),
+  driver_lat DOUBLE PRECISION,
+  driver_lng DOUBLE PRECISION,
   payment_method VARCHAR(50),
   driver_status VARCHAR(50),
   driver_status_message TEXT,

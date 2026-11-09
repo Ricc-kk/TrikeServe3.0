@@ -16,7 +16,9 @@ ADD COLUMN IF NOT EXISTS price_per_seat DECIMAL(10, 2) DEFAULT 15,
 ADD COLUMN IF NOT EXISTS passengers_json JSONB DEFAULT '[]',
 ADD COLUMN IF NOT EXISTS driver_name VARCHAR(255),
 ADD COLUMN IF NOT EXISTS driver_plate VARCHAR(50),
-ADD COLUMN IF NOT EXISTS driver_rating VARCHAR(10);
+ADD COLUMN IF NOT EXISTS driver_rating VARCHAR(10),
+ADD COLUMN IF NOT EXISTS driver_lat DOUBLE PRECISION,
+ADD COLUMN IF NOT EXISTS driver_lng DOUBLE PRECISION;
 
 -- Add indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_lobbies_customer ON shared_ride_lobbies(customer_id);
