@@ -15,11 +15,11 @@
     "android:open": "npx cap open android",
     "android:studio": "npm run android:sync && npx cap open android",
     "android:clean": "cd android && .\\gradlew.bat clean",
-    "android:debug": "cd android && .\\gradlew.bat assembleDebug",
-    "android:install:debug": "cd android && .\\gradlew.bat installDebug",
-    "android:release": "cd android && .\\gradlew.bat assembleRelease",
-    "apk:debug": "cd android && .\\gradlew.bat assembleDebug",
-    "apk:release": "cd android && .\\gradlew.bat assembleRelease"
+    "android:debug": "npm run android:sync && cd android && .\\gradlew.bat assembleDebug",
+    "android:install:debug": "npm run android:sync && cd android && .\\gradlew.bat installDebug",
+    "android:release": "npm run android:sync && cd android && .\\gradlew.bat assembleRelease",
+    "apk:debug": "npm run android:debug",
+    "apk:release": "npm run android:release"
   },
   "dependencies": {
     "@capacitor/android": "^7.6.2",
